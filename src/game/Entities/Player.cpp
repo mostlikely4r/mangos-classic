@@ -14510,14 +14510,6 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     }
 #endif
 
-    // check PLAYER_CHOSEN_TITLE compatibility with PLAYER__FIELD_KNOWN_TITLES
-    // note: PLAYER__FIELD_KNOWN_TITLES updated at quest status loaded
-    uint32 curTitle = fields[46].GetUInt32();
-    if (curTitle && !HasTitle(curTitle))
-        curTitle = 0;
-
-    SetUInt32Value(PLAYER_CHOSEN_TITLE, curTitle);
-
     Taxi::DestID destOrphan = 0;
     if (!m_taxiTracker.Load(taxi_nodes, destOrphan))
     {
