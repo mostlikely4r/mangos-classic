@@ -29,6 +29,7 @@
 #include "DBScripts/ScriptMgr.h"
 #include "World/World.h"
 #include "Groups/Group.h"
+#include "LFG/LFGHandler.h"
 #include "LFG/LFGMgr.h"
 
 void WorldSession::HandleMeetingStoneJoinOpcode(WorldPacket& recv_data)
@@ -72,6 +73,8 @@ void WorldSession::HandleMeetingStoneJoinOpcode(WorldPacket& recv_data)
 
         if (grp->IsFull())
         {
+            GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(obj->GetEntry());
+            sLFGMgr.TeleportGroupToStone(grp, gInfo->meetingstone.areaID); // TODO: add config
             SendMeetingstoneFailed(MEETINGSTONE_FAIL_FULL_GROUP);
             return;
         }
@@ -90,10 +93,7 @@ void WorldSession::HandleMeetingStoneLeaveOpcode(WorldPacket& /*recv_data*/)
     {
         if (grp->IsLeader(_player->GetObjectGuid()) && grp->IsInLFG())
         {
-            sWorld.GetLFGQueue().GetMessager().AddMessage([groupId = grp->GetId()](LFGQueue* queue)
-            {
-                queue->RemoveGroupFromQueue(groupId);
-            });
+            sLFGMgr.RemoveGroupFromQueue(grp->GetId());
         }
         else
         {
@@ -102,10 +102,7 @@ void WorldSession::HandleMeetingStoneLeaveOpcode(WorldPacket& /*recv_data*/)
     }
     else
     {
-        sWorld.GetLFGQueue().GetMessager().AddMessage([playerGuid = _player->GetObjectGuid()](LFGQueue* queue)
-        {
-            queue->RemovePlayerFromQueue(playerGuid);
-        });
+        sLFGMgr.RemovePlayerFromQueue(_player->GetObjectGuid());
     }
 }
 
@@ -126,13 +123,7 @@ void WorldSession::HandleMeetingStoneInfoOpcode(WorldPacket& /*recv_data*/)
     }
     else
     {
-        if (!_player || !_player->GetSession())
-            return;
-
-        sWorld.GetLFGQueue().GetMessager().AddMessage([playerGuid = _player->GetObjectGuid()](LFGQueue* queue)
-        {
-            queue->RestoreOfflinePlayer(playerGuid);
-        });
+        sLFGMgr.RestoreOfflinePlayer(_player);
     }
 }
 

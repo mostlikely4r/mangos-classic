@@ -63,6 +63,11 @@ struct FactionTemplateEntry;
 #include "PlayerBot/Base/PlayerbotAI.h"
 #endif
 
+#ifdef ENABLE_PLAYERBOTS
+class PlayerbotAI;
+class PlayerbotMgr;
+#endif
+
 struct AreaTrigger;
 
 typedef std::deque<Mail*> PlayerMails;
@@ -129,6 +134,14 @@ enum TrainerSpellState
     TRAINER_SPELL_RED           = 1,
     TRAINER_SPELL_GRAY          = 2,
     TRAINER_SPELL_GREEN_DISABLED = 10                       // custom value, not send to client: formally green but learn not allowed
+};
+
+// These errors are only printed in client console.
+enum TrainingFailureReason
+{
+    TRAIN_FAIL_UNAVAILABLE = 0,                             // Trainer service %d unavailable.
+    TRAIN_FAIL_NOT_ENOUGH_MONEY = 1,                        // Not enough money for trainer service %d.
+    TRAIN_FAIL_NOT_ENOUGH_SKILL = 2                         // Not enough skill points for trainer service %d.
 };
 
 enum ActionButtonUpdateState
@@ -484,6 +497,7 @@ enum PlayerExtraFlags
     // other states
     PLAYER_EXTRA_PVP_DEATH          = 0x0100,                // store PvP death status until corpse creating.
     PLAYER_EXTRA_WHISP_RESTRICTION  = 0x0200,
+    PLAYER_EXTRA_CITY_PROTECTOR     = 0x0400
 };
 
 // 2^n values
@@ -871,6 +885,22 @@ class TradeData
         ObjectGuid m_items[TRADE_SLOT_COUNT];               // traded itmes from m_player side including non-traded slot
 };
 
+/* World of Warcraft Armory */
+struct WowarmoryFeedEntry
+{
+    uint32 guid;         // Player GUID
+    time_t date;         // Log date
+    uint32 type;         // TYPE_ACHIEVEMENT_FEED, TYPE_ITEM_FEED, TYPE_BOSS_FEED
+    uint32 data;         // TYPE_ITEM_FEED: item_entry, TYPE_BOSS_FEED: creature_entry
+    uint32 item_guid;    // Can be 0
+    uint32 item_quality; // Can be 0
+    uint8  difficulty;   // Can be 0
+    int    counter;      // Can be 0
+};
+
+typedef std::vector<WowarmoryFeedEntry> WowarmoryFeeds;
+/* World of Warcraft Armory */
+
 class Player : public Unit
 {
         friend class WorldSession;
@@ -908,11 +938,16 @@ class Player : public Unit
             m_summoner = summoner;
         }
         void SummonIfPossible(bool agree, ObjectGuid guid);
+        bool HasSummonOffer() { return !m_summoner.IsEmpty(); }
 
         bool Create(uint32 guidlow, const std::string& name, uint8 race, uint8 class_, uint8 gender, uint8 skin, uint8 face, uint8 hairStyle, uint8 hairColor, uint8 facialHair, uint8 outfitId);
 
         void Update(const uint32 diff) override;
         void Heartbeat() override;
+
+#ifdef ENABLE_PLAYERBOTS
+        void UpdateAI(const uint32 diff, bool minimal = false);
+#endif
 
         static bool BuildEnumData(QueryResult* result,  WorldPacket& p_data);
 
@@ -1069,6 +1104,7 @@ class Player : public Unit
         uint8 FindEquipSlot(ItemPrototype const* proto, uint32 slot, bool swap) const;
         uint32 GetItemCount(uint32 item, bool inBankAlso = false, Item* skipItem = nullptr) const;
         Item* GetItemByGuid(ObjectGuid guid) const;
+        Item* GetItemByEntry(uint32 item) const;            // only for special cases
         Item* GetItemByPos(uint16 pos) const;
         Item* GetItemByPos(uint8 bag, uint8 slot) const;
         Item* GetWeaponForAttack(WeaponAttackType attackType) const { return GetWeaponForAttack(attackType, false, false); }
@@ -1355,6 +1391,10 @@ class Player : public Unit
 
         bool LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder);
 
+#ifdef ENABLE_PLAYERBOTS
+        bool MinimalLoadFromDB(QueryResult *result, uint32 guid);
+#endif
+
         static uint32 GetZoneIdFromDB(ObjectGuid guid);
         static uint32 GetLevelFromDB(ObjectGuid guid);
         static bool   LoadPositionFromDB(ObjectGuid guid, uint32& mapid, float& x, float& y, float& z, float& o, bool& in_flight);
@@ -1477,6 +1517,7 @@ class Player : public Unit
         void learnQuestRewardedSpells();
         void learnQuestRewardedSpells(Quest const* quest);
         void learnSpellHighRank(uint32 spellid);
+        void learnClassLevelSpells(bool includeHighLevelQuestRewards = false);
 
         uint32 GetFreeTalentPoints() const { return GetUInt32Value(PLAYER_CHARACTER_POINTS1); }
         void SetFreeTalentPoints(uint32 points) { SetUInt32Value(PLAYER_CHARACTER_POINTS1, points); }
@@ -1594,6 +1635,8 @@ class Player : public Unit
         void UpdateMaxPower(Powers power) override;
         void UpdateAttackPowerAndDamage(bool ranged = false) override;
         void UpdateDamagePhysical(WeaponAttackType attType) override;
+
+        void ApplySpellPowerBonus(int32 amount, bool apply);
         void UpdateSpellDamageBonus();
 
         void CalculateMinMaxDamage(WeaponAttackType attType, bool normalized, float& min_damage, float& max_damage, uint8 index = 0);
@@ -1602,6 +1645,7 @@ class Player : public Unit
         float GetMeleeCritFromAgility() const;
         float GetDodgeFromAgility(float amount) const;
         float GetSpellCritFromIntellect() const;
+        uint32 GetBaseSpellPowerBonus() const { return m_baseSpellPower; }
 
         void UpdateBlockPercentage();
         void UpdateCritPercentage(WeaponAttackType attType);
@@ -1726,6 +1770,7 @@ class Player : public Unit
 
         static Team TeamForRace(uint8 race);
         Team GetTeam() const { return m_team; }
+        PvpTeamIndex GetTeamId() const { return m_team == ALLIANCE ? TEAM_INDEX_ALLIANCE : TEAM_INDEX_HORDE; }
         static uint32 getFactionForRace(uint8 race);
         void setFactionForRace(uint8 race);
 
@@ -1737,6 +1782,9 @@ class Player : public Unit
         void RewardPlayerAndGroupAtCast(WorldObject* pRewardSource, uint32 spellid = 0);
         void RewardPlayerAndGroupAtEventExplored(uint32 questId, WorldObject const* pEventObject);
         bool isHonorOrXPTarget(Unit* pVictim) const;
+        bool IsCityProtector();
+        void SetCityTitle();
+        void RemoveCityTitle();
 
         template<typename T>
         bool CheckForGroup(T functor) const
@@ -2041,6 +2089,8 @@ class Player : public Unit
         bool IsFreeFlying() const { return false; }
         bool IsSwimming() const { return m_movementInfo.HasMovementFlag(MOVEFLAG_SWIMMING); }
 
+        void SetCanFly(bool enable) override;
+
         void UpdateClientControl(Unit const* target, bool enabled, bool forced = false) const;
 
         void SetMover(Unit* target) { m_mover = target ? target : this; }
@@ -2109,6 +2159,12 @@ class Player : public Unit
 
         void SendCinematicStart(uint32 CinematicSequenceId);
 
+        /* World of Warcraft Armory */
+        void CreateWowarmoryFeed(uint32 type, uint32 data, uint32 item_guid, uint32 item_quality);
+        void InitWowarmoryFeeds();
+        WowarmoryFeeds m_wowarmory_feeds;
+        /* World of Warcraft Armory */
+
         /*********************************************************/
         /***                 INSTANCE SYSTEM                   ***/
         /*********************************************************/
@@ -2175,6 +2231,16 @@ class Player : public Unit
         PlayerbotMgr* GetPlayerbotMgr() { return m_playerbotMgr; }
         void SetBotDeathTimer() { m_deathTimer = 0; }
         bool IsInDuel() const { return duel && duel->startTime != 0; }
+#endif
+
+#ifdef ENABLE_PLAYERBOTS
+        //EquipmentSets& GetEquipmentSets() { return m_EquipmentSets; }
+        void SetPlayerbotAI(PlayerbotAI* ai) { assert(!m_playerbotAI && !m_playerbotMgr); m_playerbotAI = ai; }
+        PlayerbotAI* GetPlayerbotAI() { return m_playerbotAI; }
+        void SetPlayerbotMgr(PlayerbotMgr* mgr) { assert(!m_playerbotAI && !m_playerbotMgr); m_playerbotMgr = mgr; }
+        PlayerbotMgr* GetPlayerbotMgr() { return m_playerbotMgr; }
+        void SetBotDeathTimer() { m_deathTimer = 0; }
+        //PlayerTalentMap& GetTalentMap(uint8 spec) { return m_talents[spec]; }
 #endif
 
         void SendLootError(ObjectGuid guid, LootError error) const;
@@ -2355,6 +2421,8 @@ class Player : public Unit
 
         float m_auraBaseMod[BASEMOD_END][MOD_END];
 
+        uint16 m_baseSpellPower;
+
         uint32 m_enchantmentFlatMod[MAX_ATTACK]; // TODO: Stat system - incorporate generically, exposes a required hidden weapon stat that does not apply when unarmed
 
         SpellModList m_spellMods[MAX_SPELLMOD];
@@ -2472,6 +2540,11 @@ class Player : public Unit
         std::unique_ptr<PlayerMenu> m_playerMenu;
 
 #ifdef BUILD_PLAYERBOT
+        PlayerbotAI* m_playerbotAI;
+        PlayerbotMgr* m_playerbotMgr;
+#endif
+
+#ifdef ENABLE_PLAYERBOTS
         PlayerbotAI* m_playerbotAI;
         PlayerbotMgr* m_playerbotMgr;
 #endif

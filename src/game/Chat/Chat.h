@@ -101,6 +101,10 @@ class ChatHandler
 
         bool HasSentErrorMessage() const { return sentErrorMessage;}
 
+#ifdef ENABLE_PLAYERBOTS
+        WorldSession* GetSession() { return m_session; }
+#endif
+
         /**
         * \brief Prepare SMSG_GM_MESSAGECHAT/SMSG_MESSAGECHAT
         *
@@ -204,6 +208,7 @@ class ChatHandler
         bool HandleAccountSetAddonCommand(char* args);
         bool HandleAccountSetGmLevelCommand(char* args);
         bool HandleAccountSetPasswordCommand(char* args);
+        bool HandleAccountSetEditionCommand(char* args);
 
 #ifdef BUILD_AHBOT
         bool HandleAHBotRebuildCommand(char* args);
@@ -244,6 +249,7 @@ class ChatHandler
         bool HandleCharacterLevelCommand(char* args);
         bool HandleCharacterRenameCommand(char* args);
         bool HandleCharacterReputationCommand(char* args);
+        bool HandleCharacterCityTitleCommand(char* args);
 
         bool HandleChannelListCommand(char* args);
         bool HandleChannelStaticCommand(char* args);
@@ -381,6 +387,7 @@ class ChatHandler
         bool HandleLearnAllMyClassCommand(char* args);
         bool HandleLearnAllMySpellsCommand(char* args);
         bool HandleLearnAllMyTalentsCommand(char* args);
+        bool HandleLearnAllMyLevelCommand(char* args);
 
         bool HandleListAreaTriggerCommand(char* args);
         bool HandleListAurasCommand(char* args);
@@ -744,6 +751,14 @@ class ChatHandler
         bool HandlePlayerbotCommand(char* args);
 #endif
 
+#ifdef ENABLE_PLAYERBOTS
+        bool HandlePlayerbotCommand(char* args);
+        bool HandleRandomPlayerbotCommand(char* args);
+        bool HandleAhBotCommand(char* args);
+        bool HandleGuildTaskCommand(char* args);
+        bool HandlePerfMonCommand(char* args);
+#endif
+
         bool HandleMmapPathCommand(char* args);
         bool HandleMmapLocCommand(char* args);
         bool HandleMmapLoadedTilesCommand(char* args);
@@ -762,6 +777,7 @@ class ChatHandler
         bool HandleVariablePrint(char* args);
         bool HandleWarEffortCommand(char* args);
         bool HandleWarEffortPhaseCommand(char* args);
+        bool HandleWarEffortGateCommand(char* args);
         bool HandleWarEffortCounterCommand(char* args);
         bool HandleScourgeInvasionCommand(char* args);
         bool HandleScourgeInvasionStateCommand(char* args);

@@ -83,6 +83,12 @@ DBCStorage <DurabilityCostsEntry> sDurabilityCostsStore(DurabilityCostsfmt);
 DBCStorage <EmotesEntry> sEmotesStore(EmotesEntryfmt);
 DBCStorage <EmotesTextEntry> sEmotesTextStore(EmotesTextEntryfmt);
 
+#ifdef ENABLE_PLAYERBOTS
+typedef std::tuple<uint32, uint32, uint32> EmotesTextSoundKey;
+static std::map<EmotesTextSoundKey, EmotesTextSoundEntry const*> sEmotesTextSoundMap;
+DBCStorage <EmotesTextSoundEntry> sEmotesTextSoundStore(EmotesTextSoundEntryfmt);
+#endif
+
 typedef std::map<uint32, SimpleFactionsList> FactionTeamMap;
 static FactionTeamMap sFactionTeamMap;
 DBCStorage <FactionEntry> sFactionStore(FactionEntryfmt);
@@ -299,6 +305,13 @@ void LoadDBCStores(const std::string& dataPath)
             flist.push_back(i);
         }
     }
+
+#ifdef ENABLE_PLAYERBOTS
+    LoadDBC(availableDbcLocales, bar, bad_dbc_files, sEmotesTextSoundStore, dbcPath, "EmotesTextSound.dbc");
+    for (uint32 i = 0; i < sEmotesTextSoundStore.GetNumRows(); ++i)
+        if (EmotesTextSoundEntry const* entry = sEmotesTextSoundStore.LookupEntry(i))
+            sEmotesTextSoundMap[EmotesTextSoundKey(entry->EmotesTextId, entry->RaceId, entry->SexId)] = entry;
+#endif
 
     LoadDBC(availableDbcLocales, bar, bad_dbc_files, sFactionTemplateStore,     dbcPath, "FactionTemplate.dbc");
     LoadDBC(availableDbcLocales, bar, bad_dbc_files, sGameObjectArtKitStore,    dbcPath, "GameObjectArtKit.dbc");
@@ -631,7 +644,7 @@ uint32 GetAreaIdByLocalizedName(const std::string& name)
     {
         if (AreaTableEntry const* AreaEntry = sAreaStore.LookupEntry(i))
         {
-            for (uint32 i = 0; i < MAX_LOCALE; ++i)
+            for (uint32 i = 0; i < MAX_DBC_LOCALE; ++i)
             {
                 std::string area_name(AreaEntry->area_name[i]);
                 if (area_name.size() > 0 && name.find(" - " + area_name) != std::string::npos)
@@ -733,7 +746,7 @@ ChatChannelsEntry const* GetChatChannelsEntryFor(const std::string& name, uint32
             // try to match by name first, avoid creating custom channels with same name
             if (!wname.empty())
             {
-                for (uint32 i = 0; i < MAX_LOCALE; ++i)
+                for (uint32 i = 0; i < MAX_DBC_LOCALE; ++i)
                 {
                     Utf8toWStr(entry->pattern[i], wpattern);
 
@@ -909,3 +922,11 @@ DBCStorage <FactionEntry>       const* GetFactionStore()        { return &sFacti
 DBCStorage <CreatureDisplayInfoEntry> const* GetCreatureDisplayStore() { return &sCreatureDisplayInfoStore; }
 DBCStorage <EmotesEntry>        const* GetEmotesStore()         { return &sEmotesStore;         }
 DBCStorage <EmotesTextEntry>    const* GetEmotesTextStore()     { return &sEmotesTextStore;     }
+
+#ifdef ENABLE_PLAYERBOTS
+EmotesTextSoundEntry const* FindTextSoundEmoteFor(uint32 emote, uint32 race, uint32 gender)
+{
+    auto itr = sEmotesTextSoundMap.find(EmotesTextSoundKey(emote, race, gender));
+    return itr != sEmotesTextSoundMap.end() ? itr->second : nullptr;
+}
+#endif

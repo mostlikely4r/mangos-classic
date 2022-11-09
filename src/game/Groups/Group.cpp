@@ -32,7 +32,9 @@
 #include "Maps/MapManager.h"
 #include "Maps/MapPersistentStateMgr.h"
 #include "LFG/LFGMgr.h"
-#include "LFG/LFGQueue.h"
+#include "LFG/LFGHandler.h"
+//#include "LFG/LFGQueue.h"
+
 #ifdef BUILD_PLAYERBOT
 #include "PlayerBot/Base/PlayerbotMgr.h"
 #endif
@@ -356,12 +358,28 @@ bool Group::AddMember(ObjectGuid guid, const char* name, uint8 joinMethod)
             WorldPacket groupDataPacket = groupData.BuildPacket(0, false);
             player->SendDirectMessage(groupDataPacket);
         }
+
+       if (!IsLeader(player->GetObjectGuid()) && sLFGMgr.IsPlayerInQueue(player->GetObjectGuid()))
+        {
+            bool notifyPlayer = true; // show "you have left queue" message only if different dungeons
+            if (IsInLFG())
+            {
+                LFGGroupQueueInfo grpLfgInfo;
+                LFGPlayerQueueInfo plrLfgInfo;
+                sLFGMgr.GetGroupQueueInfo(&grpLfgInfo, GetId());
+                sLFGMgr.GetPlayerQueueInfo(&plrLfgInfo, player->GetObjectGuid());
+                notifyPlayer = grpLfgInfo.areaId != plrLfgInfo.areaId;
+            }
+            sLFGMgr.RemovePlayerFromQueue(player->GetObjectGuid(), notifyPlayer ? PLAYER_CLIENT_LEAVE : PLAYER_SYSTEM_LEAVE);
+        }
         
         if (IsInLFG())
         {
             if (joinMethod != GROUP_LFG)
             {
-                sLFGMgr.UpdateGroup(this, true, guid);
+
+                player->GetSession()->SendMeetingstoneSetqueue(m_LFGAreaId, MEETINGSTONE_STATUS_JOINED_QUEUE);
+                sLFGMgr.UpdateGroup(m_Id);
             }
         }
     }
@@ -401,20 +419,15 @@ uint32 Group::RemoveMember(ObjectGuid guid, uint8 method)
 
                 if (IsInLFG())
                 {
+                    // send a message and add a kicked player to lfg queue
+                    player->GetSession()->SendMeetingstoneSetqueue(m_LFGAreaId, MEETINGSTONE_STATUS_LOOKING_FOR_NEW_PARTY_IN_QUEUE);
+                    sLFGMgr.AddToQueue(player, m_LFGAreaId);
+
                     // send a message to group and remove from queue
                     data.Initialize(SMSG_MEETINGSTONE_SETQUEUE, 5);
                     data << 0 << uint8(MEETINGSTONE_STATUS_PARTY_MEMBER_REMOVED_PARTY_REMOVED);
                     BroadcastPacket(data, true);
-                    leftGroup = true;
-                    sWorld.GetLFGQueue().GetMessager().AddMessage([groupId = GetId()](LFGQueue* queue)
-                    {
-                        queue->RemoveGroupFromQueue(groupId);
-                    });
-
-                    // want to make sure group is removed before player is added
-                    // send a message and add a kicked player to lfg queue
-                    player->GetSession()->SendMeetingstoneSetqueue(m_LFGAreaId, MEETINGSTONE_STATUS_LOOKING_FOR_NEW_PARTY_IN_QUEUE);
-                    sLFGMgr.AddToQueue(player, m_LFGAreaId);
+                    sLFGMgr.RemoveGroupFromQueue(m_Id);
                 }
             }
 
@@ -452,16 +465,11 @@ uint32 Group::RemoveMember(ObjectGuid guid, uint8 method)
             WorldPacket data(SMSG_GROUP_SET_LEADER, (m_leaderName.size() + 1));
             data << m_leaderName;
             BroadcastPacket(data, true);
-
-            sWorld.GetLFGQueue().GetMessager().AddMessage([groupId = GetId()](LFGQueue* queue)
-            {
-                queue->RemoveGroupFromQueue(groupId);
-            });
+            sLFGMgr.RemoveGroupFromQueue(m_Id);
         }
 
-        if (!leftGroup && IsInLFG())
-            sLFGMgr.UpdateGroup(this, false, guid);
-
+        if (IsInLFG())
+            sLFGMgr.UpdateGroup(m_Id);
         SendUpdate();
     }
     // if group before remove <= 2 disband it
@@ -539,12 +547,7 @@ void Group::Disband(bool hideDestroy)
     }
 
     if (IsInLFG())
-    {
-        sWorld.GetLFGQueue().GetMessager().AddMessage([groupId = GetId()](LFGQueue* queue)
-        {
-            queue->RemoveGroupFromQueue(groupId);
-        });
-    }
+        sLFGMgr.RemoveGroupFromQueue(m_Id);
 
     m_memberSlots.clear();
 
@@ -1586,14 +1589,14 @@ void Group::RewardGroupAtKill(Unit* pVictim, Player* player_tap)
 
 void Group::CalculateLFGRoles(LFGGroupQueueInfo& data)
 {
-    uint32 m_initRoles = (PLAYER_ROLE_TANK | PLAYER_ROLE_DAMAGE | PLAYER_ROLE_HEALER);
+    uint32 m_initRoles = (LFG_ROLE_TANK | LFG_ROLE_DPS | LFG_ROLE_HEALER);
     uint32 dpsCount = 0;
 
     static std::array<LfgRoles, 3> PotentialRoles =
     {
-        PLAYER_ROLE_TANK,
-        PLAYER_ROLE_HEALER,
-        PLAYER_ROLE_DAMAGE
+        LFG_ROLE_TANK,
+        LFG_ROLE_HEALER,
+        LFG_ROLE_DPS
     };
 
     std::list<ObjectGuid> processed;
@@ -1605,9 +1608,9 @@ void Group::CalculateLFGRoles(LFGGroupQueueInfo& data)
         Player* member = sObjectMgr.GetPlayer(citr.guid);
         // if enabled and player is online, calculate role based on most used talent tree
         if (member && sWorld.getConfig(CONFIG_BOOL_LFG_MATCHMAKING))
-            lfgRole = LFGMgr::CalculateTalentRoles(member);
+            lfgRole = LFGQueue::CalculateTalentRoles(member);
         else
-            lfgRole = LFGMgr::CalculateRoles(playerClass);
+            lfgRole = LFGQueue::CalculateRoles(playerClass);
 
         for (LfgRoles role : PotentialRoles)
         {
@@ -1626,14 +1629,15 @@ void Group::CalculateLFGRoles(LFGGroupQueueInfo& data)
 
     data.availableRoles = (LfgRoles)m_initRoles;
     data.dpsCount = dpsCount;
-    data.playerCount = GetMembersCount();
+    //data.playerCount = GetMembersCount();
 }
 
 bool Group::FillPremadeLFG(ObjectGuid const& plrGuid, Classes playerClass, LfgRoles requiredRole, uint32& InitRoles,
     uint32& DpsCount, std::list<ObjectGuid>& processed)
 {
     // We grant the role unless someone else in the group has higher priority for it
-    LfgRolePriority priority = LFGMgr::GetPriority(playerClass, requiredRole);
+    LfgRolePriority priority = LFGQueue::GetPriority(playerClass, requiredRole);
+
 
     for (const auto& citr : GetMemberSlots())
     {
@@ -1647,30 +1651,30 @@ bool Group::FillPremadeLFG(ObjectGuid const& plrGuid, Classes playerClass, LfgRo
         Classes memberClass = (Classes)sObjectMgr.GetPlayerClassByGUID(citr.guid);
 
         // Someone else has higher prio
-        if (priority < LFGMgr::GetPriority(memberClass, requiredRole))
+        if (priority < LFGQueue::GetPriority(memberClass, requiredRole))
             return false;
     }
 
     switch (requiredRole)
     {
-    case PLAYER_ROLE_TANK:
+    case LFG_ROLE_TANK:
     {
-        InitRoles &= ~PLAYER_ROLE_TANK;
+        InitRoles &= ~LFG_ROLE_TANK;
         break;
     }
-    case PLAYER_ROLE_HEALER:
+    case LFG_ROLE_HEALER:
     {
-        InitRoles &= ~PLAYER_ROLE_HEALER;
+        InitRoles &= ~LFG_ROLE_HEALER;
         break;
     }
-    case PLAYER_ROLE_DAMAGE:
+    case LFG_ROLE_DPS:
     {
-        if (DpsCount < LFGMgr::GetMaximumDPSSlots())
+        if (DpsCount < LFGQueue::GetMaximumDPSSlots())
         {
             ++DpsCount;
 
-            if (DpsCount >= LFGMgr::GetMaximumDPSSlots())
-                InitRoles &= ~PLAYER_ROLE_DAMAGE;
+            if (DpsCount >= LFGQueue::GetMaximumDPSSlots())
+                InitRoles &= ~LFG_ROLE_DPS;
         }
         break;
     }
