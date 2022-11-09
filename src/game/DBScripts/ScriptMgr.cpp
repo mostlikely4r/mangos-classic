@@ -901,7 +901,7 @@ void ScriptMgr::LoadScripts(ScriptMapMapName& scripts, const char* tablename)
                     continue;
                 }
                 break;
-            }
+            }       
             case SCRIPT_COMMAND_SET_SHEATHE:                // 54
             {
                 if (tmp.setSheathe.sheatheState > SHEATH_STATE_RANGED)

@@ -25,11 +25,8 @@
 #include "Server/WorldSession.h"
 #include "Entities/Object.h"
 #include "Chat/Chat.h"
-#include "Tools/Language.h"
-#include "DBScripts/ScriptMgr.h"
-#include "World/World.h"
-#include "Groups/Group.h"
-#include "LFG/LFGMgr.h"
+//ike3 #include "LFGHandler.h"
+#include "LFGMgr.h"
 
 void WorldSession::HandleMeetingStoneJoinOpcode(WorldPacket& recv_data)
 {
@@ -72,6 +69,8 @@ void WorldSession::HandleMeetingStoneJoinOpcode(WorldPacket& recv_data)
 
         if (grp->IsFull())
         {
+            //ike3 GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(obj->GetEntry());
+            //sLFGMgr.TeleportGroupToStone(grp, gInfo->meetingstone.areaID); // TODO: add config
             SendMeetingstoneFailed(MEETINGSTONE_FAIL_FULL_GROUP);
             return;
         }
@@ -90,6 +89,7 @@ void WorldSession::HandleMeetingStoneLeaveOpcode(WorldPacket& /*recv_data*/)
     {
         if (grp->IsLeader(_player->GetObjectGuid()) && grp->IsInLFG())
         {
+            //ike3 sLFGMgr.RemoveGroupFromQueue(grp->GetId());
             sWorld.GetLFGQueue().GetMessager().AddMessage([groupId = grp->GetId()](LFGQueue* queue)
             {
                 queue->RemoveGroupFromQueue(groupId);
@@ -102,6 +102,7 @@ void WorldSession::HandleMeetingStoneLeaveOpcode(WorldPacket& /*recv_data*/)
     }
     else
     {
+        //ike3 sLFGMgr.RemovePlayerFromQueue(_player->GetObjectGuid());
         sWorld.GetLFGQueue().GetMessager().AddMessage([playerGuid = _player->GetObjectGuid()](LFGQueue* queue)
         {
             queue->RemovePlayerFromQueue(playerGuid);
@@ -126,6 +127,7 @@ void WorldSession::HandleMeetingStoneInfoOpcode(WorldPacket& /*recv_data*/)
     }
     else
     {
+        //ike3 sLFGMgr.RestoreOfflinePlayer(_player);
         if (!_player || !_player->GetSession())
             return;
 

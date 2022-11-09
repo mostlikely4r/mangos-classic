@@ -5149,13 +5149,23 @@ void Spell::EffectResurrect(SpellEffectIndex eff_idx)
 
 void Spell::EffectAddExtraAttacks(SpellEffectIndex /*eff_idx*/)
 {
-    if (!unitTarget || !unitTarget->IsAlive())
+    if (!unitTarget || !unitTarget->IsAlive() || unitTarget->IsExtraAttacksLocked())
         return;
 
-    if (unitTarget->m_extraAttacks)
-        return;
+    if (m_spellInfo->Id == 20178) // Reckoning
+    {
+        if (unitTarget->GetExtraAttacks() < 4)
+            unitTarget->AddExtraAttack();
+    }
+    else
+    {
+        if (unitTarget->GetExtraAttacks())
+            return;
 
-    unitTarget->m_extraAttacks = damage;
+        unitTarget->AddExtraAttackOnUpdate();
+        unitTarget->SetExtraAttaks(damage);
+    }
+
     m_spellLog.AddLog(uint32(SPELL_EFFECT_ADD_EXTRA_ATTACKS), unitTarget->GetObjectGuid(), damage);
 }
 
@@ -5765,6 +5775,7 @@ void Spell::EffectSpiritHeal(SpellEffectIndex /*eff_idx*/)
 
     if (Player* player = static_cast<Player*>(unitTarget))
     {
+        player->RemoveAurasDueToSpell(2584);
         player->ResurrectPlayer(1.0f);
         player->SpawnCorpseBones();
 

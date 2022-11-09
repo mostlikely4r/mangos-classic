@@ -1198,6 +1198,58 @@ bool ChatHandler::HandleAccountSetPasswordCommand(char* args)
     return false;
 }
 
+// Set collector's edition
+bool ::ChatHandler::HandleAccountSetEditionCommand(char* args)
+{
+    char* accountStr = ExtractOptNotLastArg(&args);
+
+    std::string targetAccountName;
+    Player* targetPlayer = nullptr;
+    uint32 targetAccountId = ExtractAccountId(&accountStr, &targetAccountName, &targetPlayer);
+    if (!targetAccountId)
+        return false;
+
+    bool value;
+    if (!ExtractOnOff(&args, value))
+    {
+        SendSysMessage(LANG_USE_BOL);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (value)
+    {
+        if (targetPlayer && targetPlayer->GetSession()->HasAccountFlag(ACCOUNT_FLAG_COLLECTOR))
+        {
+            SendSysMessage("Target account already has Collector's Edition enabled");
+            return false;
+        }
+        if (targetPlayer)
+            targetPlayer->GetSession()->AddAccountFlag(ACCOUNT_FLAG_COLLECTOR);
+
+        LoginDatabase.PExecute("UPDATE account SET flags = flags | 0x%x WHERE id = %u", targetAccountId, ACCOUNT_FLAG_COLLECTOR);
+        SendSysMessage("Target account Collector's Edition enabled");
+        return true;
+    }
+    else
+    {
+        if (targetPlayer && !targetPlayer->GetSession()->HasAccountFlag(ACCOUNT_FLAG_COLLECTOR))
+        {
+            SendSysMessage("Target account does not have Collector's Edition enabled");
+            return false;
+        }
+        if (targetPlayer)
+            targetPlayer->GetSession()->AddAccountFlag(ACCOUNT_FLAG_COLLECTOR);
+
+        LoginDatabase.PExecute("UPDATE account SET flags = flags & ~0x%x WHERE id = %u", targetAccountId, ACCOUNT_FLAG_COLLECTOR);
+        SendSysMessage("Target account Collector's Edition disabled");
+        return true;
+    }
+
+    //PSendSysMessage(LANG_COMMAND_FLYMODE_STATUS, GetNameLink(target).c_str(), args);
+    return true;
+}
+
 bool ChatHandler::HandleMaxSkillCommand(char* /*args*/)
 {
     Player* SelectedPlayer = getSelectedPlayer();
@@ -1576,6 +1628,15 @@ bool ChatHandler::HandleLearnAllMyTalentsCommand(char* /*args*/)
     }
 
     SendSysMessage(LANG_COMMAND_LEARN_CLASS_TALENTS);
+    return true;
+}
+
+bool ChatHandler::HandleLearnAllMyLevelCommand(char* /*args*/)
+{
+    Player* player = m_session->GetPlayer();
+    player->learnClassLevelSpells();
+
+    SendSysMessage(LANG_COMMAND_LEARN_CLASS_SPELLS);
     return true;
 }
 
@@ -2538,7 +2599,7 @@ bool ChatHandler::HandleLookupItemSetCommand(char* args)
             if (!Utf8FitTo(name, wnamepart))
             {
                 loc = 0;
-                for (; loc < MAX_LOCALE; ++loc)
+                for (; loc < MAX_DBC_LOCALE; ++loc)
                 {
                     if (loc == GetSessionDbcLocale())
                         continue;
@@ -2552,7 +2613,7 @@ bool ChatHandler::HandleLookupItemSetCommand(char* args)
                 }
             }
 
-            if (loc < MAX_LOCALE)
+            if (loc < MAX_DBC_LOCALE)
             {
                 // send item set in "id - [namedlink locale]" format
                 if (m_session)
@@ -2601,7 +2662,7 @@ bool ChatHandler::HandleLookupSkillCommand(char* args)
             if (!Utf8FitTo(name, wnamepart))
             {
                 loc = 0;
-                for (; loc < MAX_LOCALE; ++loc)
+                for (; loc < MAX_DBC_LOCALE; ++loc)
                 {
                     if (loc == GetSessionDbcLocale())
                         continue;
@@ -2615,7 +2676,7 @@ bool ChatHandler::HandleLookupSkillCommand(char* args)
                 }
             }
 
-            if (loc < MAX_LOCALE)
+            if (loc < MAX_DBC_LOCALE)
             {
                 char valStr[50] = "";
                 char const* knownStr = "";
@@ -2726,7 +2787,7 @@ bool ChatHandler::HandleLookupSpellCommand(char* args)
             if (!Utf8FitTo(name, wnamepart))
             {
                 loc = 0;
-                for (; loc < MAX_LOCALE; ++loc)
+                for (; loc < MAX_DBC_LOCALE; ++loc)
                 {
                     if (loc == GetSessionDbcLocale())
                         continue;
@@ -2740,7 +2801,7 @@ bool ChatHandler::HandleLookupSpellCommand(char* args)
                 }
             }
 
-            if (loc < MAX_LOCALE)
+            if (loc < MAX_DBC_LOCALE)
             {
                 ShowSpellListHelper(target, spellInfo, LocaleConstant(loc));
                 ++counter;
@@ -2965,7 +3026,7 @@ bool ChatHandler::HandleLookupTaxiNodeCommand(char* args)
             if (!Utf8FitTo(name, wnamepart))
             {
                 loc = 0;
-                for (; loc < MAX_LOCALE; ++loc)
+                for (; loc < MAX_DBC_LOCALE; ++loc)
                 {
                     if (loc == GetSessionDbcLocale())
                         continue;
@@ -2979,7 +3040,7 @@ bool ChatHandler::HandleLookupTaxiNodeCommand(char* args)
                 }
             }
 
-            if (loc < MAX_LOCALE)
+            if (loc < MAX_DBC_LOCALE)
             {
                 // send taxinode in "id - [name] (Map:m X:x Y:y Z:z)" format
                 if (m_session)
@@ -5514,12 +5575,10 @@ bool ChatHandler::HandleGMFlyCommand(char* args)
     if (!target)
         target = m_session->GetPlayer();
 
-    // [-ZERO] Need reimplement in another way
-    {
-        SendSysMessage(LANG_USE_BOL);
-        return false;
-    }
     target->SetCanFly(value);
+    if (value)
+        SendSysMessage("WARNING: Do not jump or flying mode will be removed.");
+
     PSendSysMessage(LANG_COMMAND_FLYMODE_STATUS, GetNameLink(target).c_str(), args);
     return true;
 }
@@ -7034,12 +7093,24 @@ bool ChatHandler::HandleVariablePrint(char* args)
 
 bool ChatHandler::HandleWarEffortCommand(char* args)
 {
+    if (!sWorld.getConfig(CONFIG_BOOL_WAREFFORT_ENABLE))
+    {
+        PSendSysMessage("War Effort is disabled in config!");
+        return true;
+    }
+
     PSendSysMessage("%s", sWorldState.GetAQPrintout().data());
     return true;
 }
 
 bool ChatHandler::HandleWarEffortPhaseCommand(char* args)
 {
+    if (!sWorld.getConfig(CONFIG_BOOL_WAREFFORT_ENABLE))
+    {
+        PSendSysMessage("War Effort is disabled in config!");
+        return true;
+    }
+
     uint32 param;
     if (!ExtractUInt32(&args, param))
     {
@@ -7050,8 +7121,37 @@ bool ChatHandler::HandleWarEffortPhaseCommand(char* args)
     return true;
 }
 
+bool ChatHandler::HandleWarEffortGateCommand(char* args)
+{
+    if (!sWorld.getConfig(CONFIG_BOOL_WAREFFORT_ENABLE))
+    {
+        PSendSysMessage("War Effort is disabled in config!");
+        return true;
+    }
+
+    uint32 param;
+    if (!ExtractUInt32(&args, param))
+    {
+        PSendSysMessage("Enter valid value. 1 to close AQ Gate, 0 to open");
+        return true;
+    }
+    else if (param == 0)
+        sWorldState.HandleWarEffortGateSwitch(false);
+    else if (param == 1)
+        sWorldState.HandleWarEffortGateSwitch(true);
+    else
+        PSendSysMessage("Enter valid value. 1 to close AQ Gate, 0 to open");
+    return true;
+}
+
 bool ChatHandler::HandleWarEffortCounterCommand(char* args)
 {
+    if (!sWorld.getConfig(CONFIG_BOOL_WAREFFORT_ENABLE))
+    {
+        PSendSysMessage("War Effort is disabled in config!");
+        return true;
+    }
+
     uint32 index;
     if (!ExtractUInt32(&args, index) || index >= RESOURCE_MAX)
     {

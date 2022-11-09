@@ -44,8 +44,6 @@ VisibilityData::VisibilityData(WorldObject* owner) : m_visibilityDistanceOverrid
 void VisibilityData::SetVisibilityDistanceOverride(VisibilityDistanceType type)
 {
     MANGOS_ASSERT(type < VisibilityDistanceType::Max);
-    if (m_owner->GetTypeId() == TYPEID_PLAYER)
-        return;
 
     m_visibilityDistanceOverride = VisibilityDistances[AsUnderlyingType(type)];
 }
@@ -55,7 +53,7 @@ float VisibilityData::GetVisibilityDistance() const
     if (IsVisibilityOverridden())
         return m_visibilityDistanceOverride;
     else
-        return m_owner->GetMap()->GetVisibilityDistance();
+        return m_owner->GetMap() ? m_owner->GetMap()->GetVisibilityDistance() : DEFAULT_VISIBILITY_DISTANCE;
 }
 
 float VisibilityData::GetVisibilityDistanceFor(WorldObject* obj) const

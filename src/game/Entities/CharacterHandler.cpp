@@ -40,9 +40,15 @@
 #include "Chat/Chat.h"
 #include "Spells/SpellMgr.h"
 #include "Anticheat/Anticheat.hpp"
+#include "AI/ScriptDevAI/scripts/custom/Transmogrification.h"
 
 #ifdef BUILD_PLAYERBOT
 #include "PlayerBot/Base/PlayerbotMgr.h"
+#endif
+
+#ifdef ENABLE_PLAYERBOTS
+#include "playerbot.h"
+#include "PlayerbotAIConfig.h"
 #endif
 
 // config option SkipCinematics supported values
@@ -65,6 +71,97 @@ class LoginQueryHolder : public SqlQueryHolder
         uint32 GetAccountId() const { return m_accountId; }
         bool Initialize();
 };
+
+#ifdef ENABLE_PLAYERBOTS
+
+class PlayerbotLoginQueryHolder : public LoginQueryHolder
+{
+private:
+    uint32 masterAccountId;
+    PlayerbotHolder* playerbotHolder;
+
+public:
+    PlayerbotLoginQueryHolder(PlayerbotHolder* playerbotHolder, uint32 masterAccount, uint32 accountId, uint32 guid)
+        : LoginQueryHolder(accountId, ObjectGuid(HIGHGUID_PLAYER, guid)), masterAccountId(masterAccount), playerbotHolder(playerbotHolder) { }
+
+public:
+    uint32 GetMasterAccountId() const { return masterAccountId; }
+    PlayerbotHolder* GetPlayerbotHolder() { return playerbotHolder; }
+};
+
+void PlayerbotHolder::AddPlayerBot(uint32 playerGuid, uint32 masterAccount)
+{
+    // has bot already been added?
+    ObjectGuid guid = ObjectGuid(HIGHGUID_PLAYER, playerGuid);
+    Player* bot = sObjectMgr.GetPlayer(guid);
+
+    if (bot && bot->IsInWorld())
+        return;
+
+    uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid);
+    if (accountId == 0)
+        return;
+
+    PlayerbotLoginQueryHolder *holder = new PlayerbotLoginQueryHolder(this, masterAccount, accountId, playerGuid);
+    if (!holder->Initialize())
+    {
+        delete holder;                                      // delete all unprocessed queries
+        return;
+    }
+
+    CharacterDatabase.DelayQueryHolder(this, &PlayerbotHolder::HandlePlayerBotLoginCallback, holder);
+}
+
+void PlayerbotHolder::HandlePlayerBotLoginCallback(QueryResult * dummy, SqlQueryHolder * holder)
+{
+    if (!holder)
+        return;
+
+    PlayerbotLoginQueryHolder* lqh = (PlayerbotLoginQueryHolder*)holder;
+    uint32 masterAccount = lqh->GetMasterAccountId();
+
+    WorldSession* masterSession = masterAccount ? sWorld.FindSession(masterAccount) : NULL;
+    uint32 botAccountId = lqh->GetAccountId();
+    WorldSession *botSession = new WorldSession(botAccountId, NULL, SEC_PLAYER, 0, LOCALE_enUS, "", 0);
+    botSession->SetNoAnticheat();
+
+    uint32 guid = lqh->GetGuid().GetRawValue();
+    botSession->HandlePlayerLogin(lqh); // will delete lqh
+
+    Player* bot = botSession->GetPlayer();
+    if (!bot)
+    {
+        sLog.outError("Error logging in bot %d, please try to reset all random bots", guid);
+        return;
+    }
+    PlayerbotMgr *mgr = bot->GetPlayerbotMgr();
+    bot->SetPlayerbotMgr(NULL);
+    delete mgr;
+    sRandomPlayerbotMgr.OnPlayerLogin(bot);
+
+    bool allowed = false;
+    if (botAccountId == masterAccount)
+        allowed = true;
+    else if (masterSession && sPlayerbotAIConfig.allowGuildBots && bot->GetGuildId() == masterSession->GetPlayer()->GetGuildId())
+        allowed = true;
+    else if (sPlayerbotAIConfig.IsInRandomAccountList(botAccountId))
+        allowed = true;
+
+    if (allowed)
+    {
+        OnBotLogin(bot);
+        return;
+    }
+
+    if (masterSession)
+    {
+        ChatHandler ch(masterSession);
+        ch.PSendSysMessage("You are not allowed to control bot %s", bot->GetName());
+    }
+    LogoutPlayerBot(bot->GetObjectGuid());
+    sLog.outError("Attempt to add not allowed bot %s, please try to reset all random bots", bot->GetName());
+}
+#endif
 
 bool LoginQueryHolder::Initialize()
 {
@@ -126,8 +223,28 @@ class CharacterHandler
         {
             if (!holder) return;
 
-            if (WorldSession* session = sWorld.FindSession(((LoginQueryHolder*)holder)->GetAccountId()))
-                session->HandlePlayerLogin((LoginQueryHolder*)holder);
+            WorldSession* session = sWorld.FindSession(((LoginQueryHolder*)holder)->GetAccountId());
+            if (!session)
+            {
+                delete holder;
+                return;
+            }
+#ifdef ENABLE_PLAYERBOTS
+            ObjectGuid guid = ((LoginQueryHolder*)holder)->GetGuid();
+#endif
+            session->HandlePlayerLogin((LoginQueryHolder*)holder);
+#ifdef ENABLE_PLAYERBOTS
+            Player* player = sObjectMgr.GetPlayer(guid, true);
+            if (player)
+            {
+                if (!sRandomPlayerbotMgr.IsRandomBot(player))
+                {
+                    player->SetPlayerbotMgr(new PlayerbotMgr(player));
+                    player->GetPlayerbotMgr()->OnPlayerLogin(player);
+                }
+                sRandomPlayerbotMgr.OnPlayerLogin(player);
+            }
+#endif
         }
 #ifdef BUILD_PLAYERBOT
         // This callback is different from the normal HandlePlayerLoginCallback in that it
@@ -464,6 +581,23 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket& recv_data)
 
     WorldPacket data(SMSG_CHARACTER_LOGIN_FAILED, 1);
 
+    QueryResult* result = CharacterDatabase.PQuery("SELECT map FROM characters WHERE guid = '%u'", playerGuid.GetCounter());
+    if (result)
+    {
+        int32 mapId = -1;
+        Field* fields = result->Fetch();
+        mapId = fields[0].GetUInt32();
+        delete result;
+
+        if (mapId != -1 && (mapId == 0 || mapId == 1) && sMapMgr.IsContinentCrashed((uint32)mapId))
+        {
+            sLog.outError("HandlePlayerLoginOpcode> Player try to login in crashed map #%u, AccountId = %u", (uint32)mapId, GetAccountId());
+            data << (uint8)CHAR_LOGIN_NO_WORLD;
+            SendPacket(data, true);
+            return;
+        }
+    }
+
     if (PlayerLoading())
     {
         sLog.outError("HandlePlayerLoginOpcode> Player try to login again while already in loading stage, AccountId = %u", GetAccountId());
@@ -544,6 +678,27 @@ void PlayerbotMgr::LoginPlayerBot(ObjectGuid playerGuid)
 void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 {
     ObjectGuid playerGuid = holder->GetGuid();
+
+    QueryResult* result = CharacterDatabase.PQuery("SELECT map FROM characters WHERE guid = %u", playerGuid.GetCounter());
+    if (result)
+    {
+        int32 mapId = -1;
+        Field* fields = result->Fetch();
+        mapId = fields[0].GetUInt32();
+        delete result;
+
+        if (mapId != -1 && (mapId == 0 || mapId == 1) && sMapMgr.IsContinentCrashed((uint32)mapId))
+        {
+            KickPlayer(false, false, false); // kick to character selection
+            delete holder;                   // delete all unprocessed queries
+            m_playerLoading = false;
+            sLog.outError("HandlePlayerLoginOpcode> Player try to login in crashed map #%u, AccountId = %u", (uint32)mapId, GetAccountId());
+            WorldPacket data(SMSG_CHARACTER_LOGIN_FAILED, 1);
+            data << (uint8)CHAR_LOGIN_NO_WORLD;
+            SendPacket(data, true);
+            return;
+        }
+    }
 
     Player* pCurrChar = new Player(this);
     SetPlayer(pCurrChar, playerGuid);
@@ -765,6 +920,64 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
     if (pCurrChar->HasAtLoginFlag(AT_LOGIN_FIRST))
         pCurrChar->RemoveAtLoginFlag(AT_LOGIN_FIRST);
 
+    // add collector to all accounts if enabled
+    if (sWorld.getConfig(CONFIG_BOOL_COLLECTORS_EDITION) && !HasAccountFlag(ACCOUNT_FLAG_COLLECTOR))
+    {
+        AddAccountFlag(ACCOUNT_FLAG_COLLECTOR);
+        LoginDatabase.PExecute("UPDATE account SET flags = flags | 0x%x WHERE id = %u", GetAccountId(), ACCOUNT_FLAG_COLLECTOR);
+    }
+
+    // create collector's edition reward
+    if (HasAccountFlag(ACCOUNT_FLAG_COLLECTOR))
+    {
+        uint32 itemid = 0;
+        uint32 questid = 0;
+        switch (pCurrChar->getRace())
+        {
+        case RACE_HUMAN:
+            itemid = 14646;
+            questid = 5805;
+            break;
+        case RACE_ORC:
+        case RACE_TROLL:
+            itemid = 14649;
+            questid = 5843;
+            break;
+        case RACE_DWARF:
+        case RACE_GNOME:
+            itemid = 14647;
+            questid = 5843;
+            break;
+        case RACE_NIGHTELF:
+            itemid = 14648;
+            questid = 5842;
+            break;
+        case RACE_UNDEAD:
+            itemid = 14651;
+            questid = 5847;
+            break;
+        case RACE_TAUREN:
+            itemid = 14650;
+            questid = 5844;
+            break;
+        }
+
+        if (itemid && questid)
+        {
+            if (!pCurrChar->HasQuest(questid) && !pCurrChar->HasItemCount(itemid, 1, true) && !pCurrChar->GetQuestRewardStatus(questid))
+            {
+                ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(itemid);
+                if (pProto)
+                {
+                    uint32 noSpaceForCount = 0;
+                    ItemPosCountVec dest;
+                    uint8 msg = pCurrChar->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemid, 1, &noSpaceForCount);
+                    Item* item = pCurrChar->StoreNewItem(dest, itemid, true);
+                }
+            }
+        }
+    }
+
     // show time before shutdown if shutdown planned.
     if (sWorld.IsShutdowning())
         sWorld.ShutdownMsg(true, pCurrChar);
@@ -789,6 +1002,54 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 
     if (!pCurrChar->IsStandState() && !pCurrChar->IsStunned())
         pCurrChar->SetStandState(UNIT_STAND_STATE_STAND);
+
+    //Start Solocraft Functions
+    bool SoloCraftEnable = sWorld.getConfig(CONFIG_BOOL_SOLOCRAFT_ENABLED);
+    bool SoloCraftAnnounceModule = sWorld.getConfig(CONFIG_BOOL_SOLOCRAFT_ANNOUNCE);
+
+    if (SoloCraftEnable)
+    {
+        if (SoloCraftAnnounceModule)
+        {
+            ChatHandler(pCurrChar->GetSession()).SendSysMessage("This server is running |cff4CFF00SPP SoloCraft Custom |rmodule.");
+        }
+    }
+    //End Solocraft Functions
+
+    ObjectGuid playerGUID = _player->GetObjectGuid();
+    sTransmogrification->entryMap.erase(playerGUID);
+    QueryResult* xmog = CharacterDatabase.PQuery("SELECT GUID, FakeEntry FROM custom_transmogrification WHERE Owner = %u", _player->GetObjectGuid());
+    if (xmog)
+    {
+        do
+        {
+            const ObjectGuid itemGUID = ObjectGuid(HIGHGUID_ITEM, (xmog[0][0].GetUInt32()));
+            uint32 fakeEntry = (*xmog)[1].GetUInt32();
+            if (sObjectMgr.GetItemPrototype(fakeEntry))
+            {
+                sTransmogrification->dataMap[itemGUID] = playerGUID;
+                sTransmogrification->entryMap[playerGUID][itemGUID] = fakeEntry;
+            }
+            else
+            {
+                //sLog->outError(LOG_FILTER_SQL, "Item entry (Entry: %u, itemGUID: %u, playerGUID: %u) does not exist, ignoring.", fakeEntry, GUID_LOPART(itemGUID), player->GetObjectGuidLow());
+                // CharacterDatabase.PExecute("DELETE FROM custom_transmogrification WHERE FakeEntry = %u", fakeEntry);
+            }
+        } while (xmog->NextRow());
+
+        for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+        {
+            if (Item* item = _player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                _player->SetVisibleItemSlot(slot, item);
+        }
+
+        delete xmog;
+    }
+
+#ifdef PRESETS
+    if (sTransmogrification->GetEnableSets())
+        sTransmogrification->LoadPlayerSets(playerGUID);
+#endif
 
     m_playerLoading = false;
     delete holder;

@@ -3336,14 +3336,6 @@ void Spell::_handle_finish_phase()
     // spell log
     if (m_needSpellLog)
         m_spellLog.SendToSet();
-
-    if (m_caster && m_caster->m_extraAttacks && IsSpellHaveEffect(m_spellInfo, SPELL_EFFECT_ADD_EXTRA_ATTACKS))
-    {
-        if (Unit* target = m_caster->GetVictim())
-            m_caster->DoExtraAttacks(target);
-        else
-            m_caster->m_extraAttacks = 0;
-    }
 }
 
 void Spell::SetCastItem(Item* item)
@@ -3958,13 +3950,7 @@ void Spell::WriteSpellGoTargets(WorldPacket& data)
 
 void Spell::SendInterrupted(SpellCastResult result) const
 {
-    WorldPacket data(SMSG_SPELL_FAILURE, (8 + 4 + 1));
-    data << m_trueCaster->GetPackGUID();
-    data << m_spellInfo->Id;
-    data << uint8(result);
-    m_trueCaster->SendMessageToSet(data, true);
-
-    data.Initialize(SMSG_SPELL_FAILED_OTHER, (8 + 4));
+    WorldPacket data(SMSG_SPELL_FAILED_OTHER, (8 + 4));
     data << m_trueCaster->GetObjectGuid();
     data << m_spellInfo->Id;
     m_trueCaster->SendMessageToSet(data, true);
