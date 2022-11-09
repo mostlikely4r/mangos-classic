@@ -81,7 +81,7 @@ void MotionMaster::Initialize()
             auto creatureGroup = creature->GetCreatureGroup();
             if (creatureGroup && creatureGroup->GetFormationEntry() && creatureGroup->GetGroupEntry().GetFormationSlotId(m_owner->GetDbGuid()) == 0)
             {
-                m_currentPathId = creatureGroup->GetFormationEntry()->MovementID;
+                m_currentPathId = creatureGroup->GetFormationEntry()->MovementIdOrWander;
                 pathOrigin = WaypointPathOrigin::PATH_FROM_WAYPOINT_PATH;
             }
 
@@ -586,7 +586,7 @@ bool MotionMaster::MoveFall()
     Movement::MoveSplineInit init(*m_owner);
     init.MoveTo(x, y, tz);
     init.SetFall();
-    Mutate(new EffectMovementGenerator(init, EVENT_JUMP));
+    Mutate(new FallMovementGenerator(init, EVENT_FALL));
     return true;
 }
 

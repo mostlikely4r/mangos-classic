@@ -1,8 +1,5 @@
-/**
- * MaNGOS is a full featured server for World of Warcraft, supporting
- * the following clients: 1.12.x, 2.4.3, 3.3.5a, 4.3.4a and 5.4.8
- *
- * Copyright (C) 2005-2017  MaNGOS project <https://getmangos.eu>
+/*
+ * This file is part of the CMaNGOS Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,12 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * World of Warcraft, and all World of Warcraft or Warcraft art, images,
- * and lore are copyrighted by Blizzard Entertainment, Inc.
  */
 
-//#include "Policies/SingletonImp.h"
 #include "Common.h"
 #include "ProgressBar.h"
 #include "Globals/SharedDefines.h"
@@ -30,6 +23,8 @@
 #include "Maps/Map.h"
 #include "Globals/ObjectMgr.h"
 #include "Chat/Chat.h"
+
+/* ike3
 #include "World.h"
 #include "WorldPacket.h"
 #include "Server/WorldSession.h"
@@ -82,6 +77,19 @@ LfgRolePriority LFGPlayerQueueInfo::GetRolePriority(LfgRoles role)
 
 // Add group or player into queue. If player has group and he's a leader then whole party will be added to queue.
 void LFGQueue::AddToQueue(Player* leader, uint32 queueAreaID)
+*/
+#include "World/World.h"
+#include "WorldPacket.h"
+#include "Server/WorldSession.h"
+#include "Tools/Language.h"
+#include "Groups/Group.h"
+#include "LFG/LFGMgr.h"
+#include "LFG/LFGQueue.h"
+
+INSTANTIATE_SINGLETON_1(LFGMgr);
+
+// Add group or player into queue. If player has group and he's a leader then whole party will be added to queue.
+void LFGMgr::AddToQueue(Player* leader, uint32 queueAreaID)
 {
     if (!leader)
         return;
@@ -93,6 +101,7 @@ void LFGQueue::AddToQueue(Player* leader, uint32 queueAreaID)
     if (grp && grp->IsLeader(leader->GetObjectGuid()))
     {
         // Add group to queued groups list
+/* ike3
         LFGGroupQueueInfo& i_Group = m_queuedGroups[grp->GetId()];
 
         grp->CalculateLFGRoles(i_Group);
@@ -106,10 +115,26 @@ void LFGQueue::AddToQueue(Player* leader, uint32 queueAreaID)
         BuildSetQueuePacket(data, queueAreaID, MEETINGSTONE_STATUS_JOINED_QUEUE);
 
         grp->BroadcastPacket(data, true);
+*/
+        LFGGroupQueueInfo groupInfo;
+
+        grp->CalculateLFGRoles(groupInfo);
+        groupInfo.team = leader->GetTeam();
+        groupInfo.areaId = queueAreaID;
+        groupInfo.playerCount = grp->GetMembersCount();
+        groupInfo.groupTimer = 5 * MINUTE * IN_MILLISECONDS; // Minute timer for SMSG_MEETINGSTONE_IN_PROGRESS
+
+        grp->SetLFGAreaId(queueAreaID);
+
+        sWorld.GetLFGQueue().GetMessager().AddMessage([groupInfo, groupId = grp->GetId()](LFGQueue* queue)
+        {
+            queue->AddGroup(groupInfo, groupId);
+        });
     }
     else if (!grp)
     {
         // Add player to queued players list
+/* ike3
         LFGPlayerQueueInfo& i_Player = m_queuedPlayers[leader->GetObjectGuid()];
 
         i_Player.team = leader->GetTeam();
@@ -172,6 +197,49 @@ LfgRolePriority LFGQueue::GetPriority(Classes playerClass, LfgRoles playerRoles)
     switch (playerRoles)
     {
         case LFG_ROLE_TANK:
+*/
+        LFGPlayerQueueInfo playerInfo;
+
+        playerInfo.team = leader->GetTeam();
+        playerInfo.areaId = queueAreaID;
+        playerInfo.hasQueuePriority = false;
+        playerInfo.playerClass = leader->getClass();
+        if (sWorld.getConfig(CONFIG_BOOL_LFG_MATCHMAKING))
+            playerInfo.CalculateTalentRoles(leader);
+        else
+            playerInfo.CalculateRoles((Classes)leader->getClass());
+        playerInfo.name = leader->GetName();
+        leader->SetLFGAreaId(queueAreaID);
+
+        sWorld.GetLFGQueue().GetMessager().AddMessage([playerInfo, playerGuid = leader->GetObjectGuid()](LFGQueue* queue)
+        {
+            queue->AddPlayer(playerInfo, playerGuid);
+        });
+    }
+}
+
+LfgRoles LFGMgr::CalculateRoles(Classes playerClass)
+{
+    switch (playerClass)
+    {
+        case CLASS_DRUID:   return (LfgRoles)(PLAYER_ROLE_TANK | PLAYER_ROLE_DAMAGE | PLAYER_ROLE_HEALER);
+        case CLASS_HUNTER:  return (LfgRoles)(PLAYER_ROLE_DAMAGE);
+        case CLASS_MAGE:    return (LfgRoles)(PLAYER_ROLE_DAMAGE);
+        case CLASS_PALADIN: return (LfgRoles)(PLAYER_ROLE_TANK | PLAYER_ROLE_DAMAGE | PLAYER_ROLE_HEALER);
+        case CLASS_PRIEST:  return (LfgRoles)(PLAYER_ROLE_DAMAGE | PLAYER_ROLE_HEALER);
+        case CLASS_ROGUE:   return (LfgRoles)(PLAYER_ROLE_DAMAGE);
+        case CLASS_SHAMAN:  return (LfgRoles)(PLAYER_ROLE_DAMAGE | PLAYER_ROLE_HEALER);
+        case CLASS_WARLOCK: return (LfgRoles)(PLAYER_ROLE_DAMAGE);
+        case CLASS_WARRIOR: return (LfgRoles)(PLAYER_ROLE_TANK | PLAYER_ROLE_DAMAGE);
+        default:            return (LfgRoles)(PLAYER_ROLE_NONE);
+    }
+}
+
+LfgRolePriority LFGMgr::GetPriority(Classes playerClass, LfgRoles playerRoles)
+{
+    switch (playerRoles)
+    {
+        case PLAYER_ROLE_TANK:
         {
             switch (playerClass)
             {
@@ -183,7 +251,8 @@ LfgRolePriority LFGQueue::GetPriority(Classes playerClass, LfgRoles playerRoles)
             break;
         }
 
-        case LFG_ROLE_HEALER:
+        //ike3 case LFG_ROLE_HEALER:
+        case PLAYER_ROLE_HEALER:
         {
             switch (playerClass)
             {
@@ -197,7 +266,8 @@ LfgRolePriority LFGQueue::GetPriority(Classes playerClass, LfgRoles playerRoles)
             break;
         }
 
-        case LFG_ROLE_DPS:
+        //ike3 case LFG_ROLE_DPS:
+        case PLAYER_ROLE_DAMAGE:
         {
             switch (playerClass)
             {
@@ -219,7 +289,8 @@ LfgRolePriority LFGQueue::GetPriority(Classes playerClass, LfgRoles playerRoles)
     }
 }
 
-std::map<uint32, int32> LFGQueue::GetTalentTrees(Player* _player)
+//ike3 std::map<uint32, int32> LFGQueue::GetTalentTrees(Player* _player)
+std::map<uint32, int32> LFGMgr::GetTalentTrees(Player* _player)
 {
     std::map<uint32, int32> tabs;
     for (uint32 i = 0; i < uint32(3); i++)
@@ -256,7 +327,8 @@ std::map<uint32, int32> LFGQueue::GetTalentTrees(Player* _player)
     return tabs;
 }
 
-uint32 LFGQueue::GetHighestTalentTree(Player* _player)
+//ike3 uint32 LFGQueue::GetHighestTalentTree(Player* _player)
+uint32 LFGMgr::GetHighestTalentTree(Player* _player)
 {
     if (_player->GetLevel() >= 10)
     {
@@ -281,6 +353,7 @@ uint32 LFGQueue::GetHighestTalentTree(Player* _player)
     // if no talents picked, use standard values
     switch (_player->getClass())
     {
+    /* ike3
     case CLASS_SHAMAN:
         tab = 2;
         break;
@@ -293,10 +366,16 @@ uint32 LFGQueue::GetHighestTalentTree(Player* _player)
     case CLASS_WARRIOR:
         tab = 2;
         break;
+*/
+        case CLASS_SHAMAN: tab = 2; break;
+        case CLASS_PRIEST: tab = 1; break;
+        case CLASS_DRUID:  tab = 2; break;
+        case CLASS_WARRIOR: tab = 2; break;
     }
     return tab;
 }
 
+/* ike3
 LfgRoles LFGQueue::CalculateTalentRoles(Player* _player)
 {
     LfgRoles role = LFG_ROLE_NONE;
@@ -832,24 +911,89 @@ void LFGQueue::TeleportGroupToStone(Group* grp, uint32 areaId)
 }
 
 void LFGQueue::BuildSetQueuePacket(WorldPacket& data, uint32 areaId, uint8 status)
+*/
+LfgRoles LFGMgr::CalculateTalentRoles(Player* _player)
+{
+    LfgRoles role = PLAYER_ROLE_NONE;
+    uint32 tab = GetHighestTalentTree(_player);
+    switch (_player->getClass())
+    {
+        case CLASS_PRIEST:
+            if (tab == 2)
+                role = PLAYER_ROLE_DAMAGE;
+            else
+                role = PLAYER_ROLE_HEALER;
+            break;
+        case CLASS_SHAMAN:
+            if (tab == 2)
+                role = PLAYER_ROLE_HEALER;
+            else
+                role = PLAYER_ROLE_DAMAGE;
+            break;
+        case CLASS_WARRIOR:
+            if (tab == 2)
+                role = PLAYER_ROLE_TANK;
+            else
+                role = PLAYER_ROLE_DAMAGE;
+            break;
+        case CLASS_PALADIN:
+            if (tab == 0)
+                role = PLAYER_ROLE_HEALER;
+            else if (tab == 1)
+                role = PLAYER_ROLE_TANK;
+            else if (tab == 2)
+                role = PLAYER_ROLE_DAMAGE;
+            break;
+        case CLASS_DRUID:
+            if (tab == 0)
+                role = PLAYER_ROLE_DAMAGE;
+            else if (tab == 1)
+                role = LfgRoles(PLAYER_ROLE_TANK | PLAYER_ROLE_DAMAGE);
+            else if (tab == 2)
+                role = PLAYER_ROLE_HEALER;
+            break;
+        default:
+            role = PLAYER_ROLE_DAMAGE;
+            break;
+    }
+    return role;
+}
+
+void LFGMgr::UpdateGroup(Group* group, bool join, ObjectGuid playerGuid)
+{
+    LFGGroupQueueInfo groupInfo;
+    if (!group->IsFull())
+        group->CalculateLFGRoles(groupInfo);
+    sWorld.GetLFGQueue().GetMessager().AddMessage([groupInfo, join, playerGuid, groupId = group->GetId()](LFGQueue* queue)
+    {
+        queue->UpdateGroup(groupInfo, join, playerGuid, groupId);
+    });
+}
+
+void LFGMgr::BuildSetQueuePacket(WorldPacket& data, uint32 areaId, uint8 status)
+
 {
     data.Initialize(SMSG_MEETINGSTONE_SETQUEUE, 5);
     data << uint32(areaId);
     data << uint8(status);
 }
 
-void LFGQueue::BuildMemberAddedPacket(WorldPacket& data, ObjectGuid plrGuid)
+//ike3 void LFGQueue::BuildMemberAddedPacket(WorldPacket& data, ObjectGuid plrGuid)
+void LFGMgr::BuildMemberAddedPacket(WorldPacket& data, ObjectGuid plrGuid)
 {
     data.Initialize(SMSG_MEETINGSTONE_MEMBER_ADDED, 8);
     data << uint64(plrGuid);
 }
 
-void LFGQueue::BuildInProgressPacket(WorldPacket& data)
+//ike3 void LFGQueue::BuildInProgressPacket(WorldPacket& data)
+void LFGMgr::BuildInProgressPacket(WorldPacket& data)
 {
     data.Initialize(SMSG_MEETINGSTONE_IN_PROGRESS, 0);
 }
 
-void LFGQueue::BuildCompletePacket(WorldPacket& data)
+
+//ike3 void LFGQueue::BuildCompletePacket(WorldPacket& data)
+void LFGMgr::BuildCompletePacket(WorldPacket& data)
 {
     data.Initialize(SMSG_MEETINGSTONE_COMPLETE, 0);
 }

@@ -1,8 +1,5 @@
-/**
- * MaNGOS is a full featured server for World of Warcraft, supporting
- * the following clients: 1.12.x, 2.4.3, 3.3.5a, 4.3.4a and 5.4.8
- *
- * Copyright (C) 2005-2017  MaNGOS project <https://getmangos.eu>
+/*
+ * This file is part of the CMaNGOS Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,9 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * World of Warcraft, and all World of Warcraft or Warcraft art, images,
- * and lore are copyrighted by Blizzard Entertainment, Inc.
  */
 
 #include "Common.h"
@@ -31,11 +25,7 @@
 #include "Server/WorldSession.h"
 #include "Entities/Object.h"
 #include "Chat/Chat.h"
-#include "Language.h"
-#include "DBScripts/ScriptMgr.h"
-#include "World/World.h"
-#include "Groups/Group.h"
-#include "LFGHandler.h"
+//ike3 #include "LFGHandler.h"
 #include "LFGMgr.h"
 
 void WorldSession::HandleMeetingStoneJoinOpcode(WorldPacket& recv_data)
@@ -79,8 +69,8 @@ void WorldSession::HandleMeetingStoneJoinOpcode(WorldPacket& recv_data)
 
         if (grp->IsFull())
         {
-            GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(obj->GetEntry());
-            sLFGMgr.TeleportGroupToStone(grp, gInfo->meetingstone.areaID); // TODO: add config
+            //ike3 GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(obj->GetEntry());
+            //sLFGMgr.TeleportGroupToStone(grp, gInfo->meetingstone.areaID); // TODO: add config
             SendMeetingstoneFailed(MEETINGSTONE_FAIL_FULL_GROUP);
             return;
         }
@@ -99,7 +89,11 @@ void WorldSession::HandleMeetingStoneLeaveOpcode(WorldPacket& /*recv_data*/)
     {
         if (grp->IsLeader(_player->GetObjectGuid()) && grp->IsInLFG())
         {
-            sLFGMgr.RemoveGroupFromQueue(grp->GetId());
+            //ike3 sLFGMgr.RemoveGroupFromQueue(grp->GetId());
+            sWorld.GetLFGQueue().GetMessager().AddMessage([groupId = grp->GetId()](LFGQueue* queue)
+            {
+                queue->RemoveGroupFromQueue(groupId);
+            });
         }
         else
         {
@@ -108,7 +102,11 @@ void WorldSession::HandleMeetingStoneLeaveOpcode(WorldPacket& /*recv_data*/)
     }
     else
     {
-        sLFGMgr.RemovePlayerFromQueue(_player->GetObjectGuid());
+        //ike3 sLFGMgr.RemovePlayerFromQueue(_player->GetObjectGuid());
+        sWorld.GetLFGQueue().GetMessager().AddMessage([playerGuid = _player->GetObjectGuid()](LFGQueue* queue)
+        {
+            queue->RemovePlayerFromQueue(playerGuid);
+        });
     }
 }
 
@@ -129,7 +127,14 @@ void WorldSession::HandleMeetingStoneInfoOpcode(WorldPacket& /*recv_data*/)
     }
     else
     {
-        sLFGMgr.RestoreOfflinePlayer(_player);
+        //ike3 sLFGMgr.RestoreOfflinePlayer(_player);
+        if (!_player || !_player->GetSession())
+            return;
+
+        sWorld.GetLFGQueue().GetMessager().AddMessage([playerGuid = _player->GetObjectGuid()](LFGQueue* queue)
+        {
+            queue->RestoreOfflinePlayer(playerGuid);
+        });
     }
 }
 

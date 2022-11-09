@@ -266,6 +266,15 @@ void WorldSession::HandleMessagechatOpcode(WorldPacket& recv_data)
             }
 #endif
 
+            if (player->isEnabledWhisperRestriction())
+            {
+                if (!GetPlayer()->IsGameMaster() && !player->isAllowedWhisperFrom(this->GetPlayer()->GetObjectGuid()))
+                {
+                    ChatHandler(this).PSendSysMessage("%s did not receive your message because they are currently restricting whispers to their friends, guild, and group.", player->GetName());
+                    return;
+                }
+            }
+
             GetPlayer()->Whisper(msg, lang, player->GetObjectGuid());
 
             if (lang != LANG_ADDON && !m_anticheat->IsSilenced())

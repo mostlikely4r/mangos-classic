@@ -496,6 +496,7 @@ enum PlayerExtraFlags
 
     // other states
     PLAYER_EXTRA_PVP_DEATH          = 0x0100,               // store PvP death status until corpse creating.,
+    PLAYER_EXTRA_WHISP_RESTRICTION  = 0x0200,    
     PLAYER_EXTRA_CITY_PROTECTOR     = 0x0400
 };
 
@@ -720,6 +721,7 @@ enum PlayerLoginQueryIndex
     PLAYER_LOGIN_QUERY_LOADSPELLCOOLDOWNS,
     PLAYER_LOGIN_QUERY_LOADGUILD,
     PLAYER_LOGIN_QUERY_LOADBGDATA,
+    PLAYER_LOGIN_QUERY_LOADACCOUNTDATA,
     PLAYER_LOGIN_QUERY_LOADSKILLS,
     PLAYER_LOGIN_QUERY_LOADMAILS,
     PLAYER_LOGIN_QUERY_LOADMAILEDITEMS,
@@ -988,6 +990,9 @@ class Player : public Unit
         void SetPvPDeath(bool on) { if (on) m_ExtraFlags |= PLAYER_EXTRA_PVP_DEATH; else m_ExtraFlags &= ~PLAYER_EXTRA_PVP_DEATH; }
         bool isDebuggingAreaTriggers() { return m_isDebuggingAreaTriggers; }
         void SetDebuggingAreaTriggers(bool on) { m_isDebuggingAreaTriggers = on; }
+        bool isAllowedWhisperFrom(ObjectGuid guid);
+        bool isEnabledWhisperRestriction() const { return m_ExtraFlags & PLAYER_EXTRA_WHISP_RESTRICTION; }
+        void SetWhisperRestriction(bool on) { if (on) m_ExtraFlags |= PLAYER_EXTRA_WHISP_RESTRICTION; else m_ExtraFlags &= ~PLAYER_EXTRA_WHISP_RESTRICTION; }
 
         // Cannot be detected by creature (Should be tested in AI::MoveInLineOfSight)
         void SetCannotBeDetectedTimer(uint32 milliseconds) { m_cannotBeDetectedTimer = milliseconds; };
@@ -1716,6 +1721,11 @@ class Player : public Unit
         void UpdateLocalChannels(uint32 newZone);
         void LeaveLFGChannel();
 
+        // LFG
+        void SetLFGAreaId(uint32 areaId) { m_LFGAreaId = areaId; }
+        uint32 GetLFGAreaId() { return m_LFGAreaId; }
+        bool IsInLFG() { return m_LFGAreaId > 0; }
+
         void UpdateDefense();
         void UpdateWeaponSkill(WeaponAttackType attType);
         void UpdateCombatSkills(Unit* pVictim, WeaponAttackType attType, bool defence);
@@ -1903,7 +1913,10 @@ class Player : public Unit
         void SendDirectMessage(WorldPacket const& data) const;
 
         PlayerMenu* GetPlayerMenu() const { return m_playerMenu.get(); }
-        std::vector<ItemSetEffect*> ItemSetEff;
+
+        ItemSetEffect* GetItemSetEffect(uint32 setId);
+        ItemSetEffect* AddItemSetEffect(uint32 setId);
+        void RemoveItemSetEffect(uint32 setId);
 
         /*********************************************************/
         /***               BATTLEGROUND SYSTEM                 ***/
@@ -2570,6 +2583,8 @@ class Player : public Unit
 
         uint32 m_DetectInvTimer;
 
+        uint32 m_LFGAreaId;
+
         // Temporary removed pet cache
         uint32 m_temporaryUnsummonedPetNumber;
         uint32 m_BGPetSpell;
@@ -2591,6 +2606,8 @@ class Player : public Unit
         std::map<uint32, ObjectGuid> m_followAngles;
 
         uint8 m_fishingSteps;
+
+        std::map<uint32, ItemSetEffect> m_itemSetEffects;
 };
 
 void AddItemsSetItem(Player* player, Item* item);

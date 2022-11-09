@@ -129,6 +129,7 @@ class SpellCastTargets
         Unit* getUnitTarget() const { return m_unitTarget; }
 
         void setDestination(float x, float y, float z);
+        void setDestination(Position position);
         void setSource(float x, float y, float z);
         void getDestination(float& x, float& y, float& z) const { x = m_destPos.x; y = m_destPos.y; z = m_destPos.z; }
         Position getDestination() const { return m_destPos; }
@@ -281,6 +282,55 @@ class SpellModRAII
         Player* m_modOwner;
         bool m_success;
         bool m_onlySave; // casting time
+};
+
+class SpellCastArgs
+{
+    public:
+        SpellCastArgs() : m_target(nullptr), m_scriptValue(0), m_scriptValueSet(false), m_destinationSet(false)
+        {
+            memset(m_basePoints, 0, sizeof(m_basePoints));
+        }
+
+        SpellCastArgs& SetTarget(Unit* target) { m_target = target; return *this; }
+        Unit* GetTarget() const { return m_target; }
+
+        SpellCastArgs& SetScriptValue(uint64 scriptValue) { m_scriptValue = scriptValue; m_scriptValueSet = true; return *this; }
+        bool IsScriptValueSet() const { return m_scriptValueSet; }
+        uint64 GetScriptValue() const { return m_scriptValue; }
+
+        SpellCastArgs& SetBasePoints(int32* basePoints1, int32* basePoints2, int32* basePoints3)
+        {
+            m_basePoints[0] = basePoints1;
+            m_basePoints[1] = basePoints2;
+            m_basePoints[2] = basePoints3;
+            return *this;
+        }
+        int32* GetBasePoints(uint32 index) { return m_basePoints[index]; }
+
+        SpellCastArgs& SetDestination(float x, float y, float z)
+        {
+            m_destinationSet = true;
+            m_destination.x = x;
+            m_destination.y = y;
+            m_destination.z = z;
+            return *this;
+        }
+        SpellCastArgs& SetDestination(Position& position)
+        {
+            m_destinationSet = true;
+            m_destination = position;
+            return *this;
+        }
+        bool IsDestinationSet() const { return m_destinationSet; }
+        Position GetDestination() const { return m_destination; }
+    private:
+        Unit* m_target;
+        uint64 m_scriptValue;
+        bool m_scriptValueSet;
+        int32* m_basePoints[3];
+        bool m_destinationSet;
+        Position m_destination;
 };
 
 class Spell
@@ -588,6 +638,7 @@ class Spell
             bool   isCrit : 1;
             bool   executionless : 1;
             uint32 heartbeatResistChance;
+            uint32 effectDuration;
             uint32 diminishDuration; // Store duration after diminishing returns are applied
             DiminishingLevels diminishLevel;
             DiminishingGroup diminishGroup;
@@ -686,6 +737,8 @@ class Spell
         TargetList& GetTargetList() { return m_UniqueTargetInfo; }
         // enables customizing auras after creation - use only in OnEffectExecute and with aura effects
         SpellAuraHolder* GetSpellAuraHolder() { return m_spellAuraHolder; }
+        // sets event target object
+        void SetEventTarget(WorldObject* object) { m_eventTarget = object; }
 
         // GO casting preparations
         void SetFakeCaster(Unit* caster) { m_caster = caster; }
@@ -749,7 +802,7 @@ class Spell
         int32 damage;
 
         // -------------------------------------------
-        GameObject* focusObject;
+        WorldObject* m_eventTarget;
 
         // Damage and healing in effects need just calculate
         int32 m_damage;                                     // Damage in effects count here

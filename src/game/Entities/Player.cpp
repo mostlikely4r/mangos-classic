@@ -569,6 +569,8 @@ Player::Player(WorldSession* session): Unit(), m_taxiTracker(*this), m_mover(thi
 
     m_DetectInvTimer = 1 * IN_MILLISECONDS;
 
+    m_LFGAreaId = 0;
+
     for (auto& j : m_bgBattleGroundQueueID)
     {
         j.bgQueueTypeId  = BATTLEGROUND_QUEUE_NONE;
@@ -678,9 +680,6 @@ Player::~Player()
         m_transport->RemovePassenger(this);
     }
 
-    for (auto& x : ItemSetEff)
-        delete x;
-
     // clean up player-instance binds, may unload some instance saves
     for (auto& itr : m_boundInstances)
             itr.second.state->RemovePlayer(this);
@@ -765,7 +764,7 @@ bool Player::Create(uint32 guidlow, const std::string& name, uint8 race, uint8 c
 {
     // FIXME: outfitId not used in player creating
 
-    Object::_Create(guidlow, 0, HIGHGUID_PLAYER);
+    Object::_Create(guidlow, guidlow, 0, HIGHGUID_PLAYER);
 
     m_name = name;
 
@@ -1650,8 +1649,11 @@ void Player::SetDeathState(DeathState s)
 
         clearResurrectRequestData();
 
+        bool petAlive = true; // PET_SAVE_REAGENTS when pet is unsummoned
         if (Pet* pet = GetPet())
-            RemovePet(pet->IsAlive() ? PET_SAVE_REAGENTS : PET_SAVE_AS_CURRENT);
+            petAlive = pet->IsAlive();
+
+        RemovePet(petAlive ? PET_SAVE_REAGENTS : PET_SAVE_AS_CURRENT);
 
         // Remove guardians (only players are supposed to have pets/guardians removed on death)
         RemoveGuardians();
@@ -2321,6 +2323,11 @@ void Player::Regenerate(Powers power, uint32 diff)
         {
             float EnergyRate = sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_ENERGY);
             addvalue = uint32(float(diff) / 100) * EnergyRate;
+
+            AuraList const& ModPowerRegenPCTAuras = GetAurasByType(SPELL_AURA_MOD_POWER_REGEN_PERCENT);
+            for (auto ModPowerRegenPCTAura : ModPowerRegenPCTAuras)
+                if (ModPowerRegenPCTAura->GetModifier()->m_miscvalue == int32(power))
+                    addvalue *= (ModPowerRegenPCTAura->GetModifier()->m_amount + 100) / 100.0f;
             break;
         }
         case POWER_FOCUS:
@@ -2561,6 +2568,23 @@ void Player::SetGMVisible(bool on)
 
         SetVisibility(VISIBILITY_OFF);
     }
+}
+
+bool Player::isAllowedWhisperFrom(ObjectGuid guid)
+{
+    if (PlayerSocial* social = GetSocial())
+        if (social->HasFriend(guid))
+            return true;
+
+    if (Group* group = GetGroup())
+        if (group->IsMember(guid))
+            return true;
+
+    if (Guild* guild = sGuildMgr.GetGuildById(GetGuildId()))
+        if (guild->GetMemberSlot(guid))
+            return true;
+
+    return false;
 }
 
 ///- If the player is invited, remove him. If the group if then only 1 person, disband the group.
@@ -6148,7 +6172,18 @@ void Player::CheckAreaExploreAndOutdoor()
                 continue;
             if ((spellInfo->Stances || spellInfo->StancesNot) && !IsNeedCastSpellAtFormApply(spellInfo, GetShapeshiftForm()))
                 continue;
-            CastSpell(this, spellInfo, TRIGGERED_OLD_TRIGGERED, nullptr);
+            CastSpell(this, spellInfo, TRIGGERED_OLD_TRIGGERED);
+        }
+        for (auto& setData : m_itemSetEffects)
+        {
+            for (auto spellInfo : setData.second.spells)
+            {
+                if (!spellInfo || !IsNeedCastSpellAtOutdoor(spellInfo) || HasAura(spellInfo->Id))
+                    continue;
+                if ((spellInfo->Stances || spellInfo->StancesNot) && !IsNeedCastSpellAtFormApply(spellInfo, GetShapeshiftForm()))
+                    continue;
+                CastSpell(this, spellInfo, TRIGGERED_OLD_TRIGGERED);
+            }
         }
     }
     else if (sWorld.getConfig(CONFIG_BOOL_VMAP_INDOOR_CHECK) && !IsGameMaster())
@@ -7298,12 +7333,9 @@ void Player::UpdateEquipSpellsAtFormChange()
     }
 
     // item set bonuses not dependent from item broken state
-    for (auto eff : ItemSetEff)
+    for (auto& setData : m_itemSetEffects)
     {
-        if (!eff)
-            continue;
-
-        for (auto spellInfo : eff->spells)
+        for (auto spellInfo : setData.second.spells)
         {
             if (!spellInfo)
                 continue;
@@ -7629,19 +7661,21 @@ void Player::RemovedInsignia(Player* looterPlr)
         return;
 
     // If not released spirit, do it !
+    bool repop = false;
     if (m_deathTimer > 0)
     {
         m_deathTimer = 0;
         BuildPlayerRepop();
         RepopAtGraveyard();
+        repop = true;
     }
 
     Corpse* corpse = GetCorpse();
     if (!corpse)
         return;
 
-    WorldPacket data(SMSG_PLAYER_SKINNED, 1);
-    data << uint8(0);
+    WorldPacket data(SMSG_PLAYER_SKINNED, 0);
+    data << uint8(repop);
     GetSession()->SendPacket(data);
 
     // We have to convert player corpse to bones, not to be able to resurrect there
@@ -7703,18 +7737,6 @@ void Player::SendInitWorldStates(uint32 zoneid) const
         case 1377:                                      // Silithus
             if (OutdoorPvP* outdoorPvP = sOutdoorPvPMgr.GetScript(zoneid))
                 outdoorPvP->FillInitialWorldStates(data, count);
-            break;
-        case 2597:                                      // AV
-            if (bg && bg->GetTypeId() == BATTLEGROUND_AV)
-                bg->FillInitialWorldStates(data, count);
-            break;
-        case 3277:                                      // WS
-            if (bg && bg->GetTypeId() == BATTLEGROUND_WS)
-                bg->FillInitialWorldStates(data, count);
-            break;
-        case 3358:                                      // AB
-            if (bg && bg->GetTypeId() == BATTLEGROUND_AB)
-                bg->FillInitialWorldStates(data, count);
             break;
     }
 
@@ -14080,7 +14102,7 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     //"health, power1, power2, power3, power4, power5, exploredZones, equipmentCache, ammoId, actionBars, fishingSteps FROM characters WHERE guid = '%u'", GUID_LOPART(m_guid));
     QueryResult* result = holder->GetResult(PLAYER_LOGIN_QUERY_LOADFROM);
 
-    Object::_Create(guid.GetCounter(), 0, HIGHGUID_PLAYER);
+    Object::_Create(guid.GetCounter(), guid.GetCounter(), 0, HIGHGUID_PLAYER);
 
     if (!result)
     {
@@ -18557,6 +18579,25 @@ void Player::learnQuestRewardedSpells()
     }
 }
 
+ItemSetEffect* Player::GetItemSetEffect(uint32 setId)
+{
+    auto itr = m_itemSetEffects.find(setId);
+    if (itr == m_itemSetEffects.end())
+        return nullptr;
+
+    return &itr->second;
+}
+
+ItemSetEffect* Player::AddItemSetEffect(uint32 setId)
+{
+    return &m_itemSetEffects.emplace(setId, ItemSetEffect()).first->second;
+}
+
+void Player::RemoveItemSetEffect(uint32 setId)
+{
+    m_itemSetEffects.erase(setId);
+}
+
 void Player::SetWeeklyQuestStatus(uint32 quest_id)
 {
     m_weeklyquests.insert(quest_id);
@@ -19799,7 +19840,12 @@ void Player::_LoadSkills(QueryResult* result)
                     continue;
 
                 if (entry->flags & SKILL_FLAG_MAXIMIZED)
-                    value = max = GetSkillMaxForLevel();
+                {
+                    if (entry->flags & SKILL_FLAG_DISPLAY_AS_MONO)
+                        max = GetSkillMaxForLevel();
+                    
+                    value = max;
+                }
 
                 if (SkillTiersEntry const* steps = sSkillTiersStore.LookupEntry(entry->skillTierId))
                 {

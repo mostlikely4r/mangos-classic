@@ -54,7 +54,7 @@ Pet::Pet(PetType type) :
     m_removed(false), m_happinessTimer(7500), m_loyaltyTimer(12000), m_petType(type), m_duration(0),
     m_loyaltyPoints(0), m_bonusdamage(0), m_loading(false),
     m_xpRequiredForNextLoyaltyLevel(0),
-    m_petModeFlags(PET_MODE_DEFAULT), m_originalCharminfo(nullptr), m_imposedCooldown(false)
+    m_petModeFlags(PET_MODE_DEFAULT), m_originalCharminfo(nullptr)
 {
     m_name = "Pet";
 
@@ -635,7 +635,6 @@ void Pet::SetDeathState(DeathState s)                       // overwrite virtual
 
         if (Unit* owner = GetOwner())
         {
-            StartCooldown(owner);
             if (getPetType() == GUARDIAN_PET)
                 owner->RemoveGuardian(this);
         }
@@ -1239,7 +1238,10 @@ void Pet::InitStatsForLevel(uint32 petlevel)
     float mana = 0.f;
     float armor = 0.f;
 
-    switch (getPetType())
+    PetType petType = getPetType();
+    if (!GetOwnerGuid().IsPlayer())
+        petType = GUARDIAN_PET; // for purpose of pet scaling, NPC summoned SUMMON_PET scale as GUARDIAN_PET
+    switch (petType)
     {
         case HUNTER_PET:
         {
@@ -1287,7 +1289,7 @@ void Pet::InitStatsForLevel(uint32 petlevel)
             }
             else
             {
-                sLog.outErrorDb("HUNTER PET levelstats missing in DB! 'Weakifying' pet");
+                sLog.outErrorDb("HUNTER PET levelstats missing in DB! 'Weakifying' pet. Entry: 1 PetLevel: %u.", petlevel);
 
                 for (int i = STAT_STRENGTH; i < MAX_STATS; ++i)
                     SetCreateStat(Stats(i), 1.0f);
@@ -1343,8 +1345,7 @@ void Pet::InitStatsForLevel(uint32 petlevel)
             }
             else
             {
-                sLog.outErrorDb("WARLOCK PET levelstats missing in DB! 'Weakifying' pet");
-
+                sLog.outErrorDb("SUMMON_PET levelstats missing in DB! 'Weakifying' pet and giving it mana to make it obvious. Entry: %u Level: %u", cInfo->Entry, petlevel);
                 for (int i = STAT_STRENGTH; i < MAX_STATS; ++i)
                     SetCreateStat(Stats(i), 1.0f);
 
@@ -2125,7 +2126,7 @@ bool Pet::Create(uint32 guidlow, CreatureCreatePos& cPos, CreatureInfo const* ci
 {
     SetMap(cPos.GetMap());
 
-    Object::_Create(guidlow, pet_number, HIGHGUID_PET);
+    Object::_Create(guidlow, guidlow, pet_number, HIGHGUID_PET);
 
     m_originalEntry = cinfo->Entry;
 
@@ -2309,22 +2310,12 @@ void Pet::ForcedDespawn(uint32 timeMSToDespawn, bool onlyAlive)
     if (IsDespawned())
         return;
 
+    Unit* owner = GetOwner();
+
     if (IsAlive())
         SetDeathState(JUST_DIED);
 
     RemoveCorpse(true);                                     // force corpse removal in the same grid
 
-    Unsummon(PET_SAVE_NOT_IN_SLOT);
-}
-
-void Pet::StartCooldown(Unit* owner)
-{
-    if (!m_imposedCooldown)
-    {
-        m_imposedCooldown = true;
-        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(GetUInt32Value(UNIT_CREATED_BY_SPELL));
-        // Remove infinity cooldown
-        if (spellInfo && spellInfo->HasAttribute(SPELL_ATTR_COOLDOWN_ON_EVENT))
-            owner->AddCooldown(*spellInfo);
-    }
+    Unsummon(PET_SAVE_NOT_IN_SLOT, owner);
 }

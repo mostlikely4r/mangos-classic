@@ -73,7 +73,7 @@ int32 GetSpellMaxDuration(SpellEntry const* spellInfo)
     return (du->Duration[2] == -1) ? -1 : abs(du->Duration[2]);
 }
 
-int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster)
+int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster, Unit const* target, AuraScript* auraScript)
 {
     int32 duration = GetSpellDuration(spellInfo);
 
@@ -81,8 +81,11 @@ int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster)
     {
         int32 maxduration = GetSpellMaxDuration(spellInfo);
 
-        if (duration != maxduration && caster->GetTypeId() == TYPEID_PLAYER)
+        if (duration != maxduration && caster->IsPlayer())
             duration += int32((maxduration - duration) * caster->GetComboPoints() / 5);
+
+        if (auraScript)
+            duration = auraScript->OnDurationCalculate(caster, target, duration);
 
         if (Player* modOwner = caster->GetSpellModOwner())
         {
@@ -92,6 +95,8 @@ int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster)
                 duration = 0;
         }
     }
+    else if (auraScript)
+        duration = auraScript->OnDurationCalculate(caster, target, duration);
 
     return duration;
 }
@@ -2568,9 +2573,6 @@ SpellCastResult SpellMgr::GetSpellAllowedInLocationError(SpellEntry const* spell
             return map_id == 30 && bg
                    && bg->GetStatus() != STATUS_WAIT_JOIN ? SPELL_CAST_OK : SPELL_FAILED_REQUIRES_AREA;
         }
-        case 23333:                                         // Warsong Flag
-        case 23335:                                         // Silverwing Flag
-            return map_id == 489 && player && player->InBattleGround() ? SPELL_CAST_OK : SPELL_FAILED_REQUIRES_AREA;
         case 2584:                                          // Waiting to Resurrect
         {
             return player && player->InBattleGround() ? SPELL_CAST_OK : SPELL_FAILED_ONLY_BATTLEGROUNDS;

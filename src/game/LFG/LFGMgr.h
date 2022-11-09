@@ -1,8 +1,5 @@
-/**
- * MaNGOS is a full featured server for World of Warcraft, supporting
- * the following clients: 1.12.x, 2.4.3, 3.3.5a, 4.3.4a and 5.4.8
- *
- * Copyright (C) 2005-2017  MaNGOS project <https://getmangos.eu>
+/*
+ * This file is part of the CMaNGOS Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,9 +14,6 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * World of Warcraft, and all World of Warcraft or Warcraft art, images,
- * and lore are copyrighted by Blizzard Entertainment, Inc.
  */
 
 #ifndef MANGOSSERVER_LFGMGR_H
@@ -30,7 +24,7 @@
 
 #include "Policies/Singleton.h"
 #include "Common.h"
-
+/* ike3
 enum LfgRoles
 {
     LFG_ROLE_NONE   = 0x00,
@@ -115,6 +109,19 @@ class LFGQueue
         void LoadMeetingStones();
         MeetingStoneSet GetDungeonsForPlayer(Player* player);
         void TeleportGroupToStone(Group* grp, uint32 areaId);
+*/
+#include "LFG/LFGDefines.h"
+
+class Group;
+
+class LFGMgr
+{
+    public:
+        LFGMgr() {}
+        ~LFGMgr() {}
+
+        void AddToQueue(Player* leader, uint32 queAreaID);
+        void UpdateGroup(Group* group, bool join, ObjectGuid playerGuid);
 
         static void BuildSetQueuePacket(WorldPacket& data, uint32 areaId, uint8 status);
         static void BuildMemberAddedPacket(WorldPacket& data, ObjectGuid plrGuid);
@@ -128,6 +135,7 @@ class LFGQueue
         static LfgRolePriority GetPriority(Classes playerClass, LfgRoles playerRoles);
 
         static uint32 GetMaximumDPSSlots() { return 3u; }
+/* ike3
 
     private:
         typedef std::map<ObjectGuid, LFGPlayerQueueInfo> QueuedPlayersMap;
@@ -147,5 +155,9 @@ class LFGQueue
 };
 
 #define sLFGMgr MaNGOS::Singleton<LFGQueue>::Instance()
+*/
+};
+
+#define sLFGMgr MaNGOS::Singleton<LFGMgr>::Instance()
 
 #endif

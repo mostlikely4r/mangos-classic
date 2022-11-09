@@ -41,6 +41,8 @@
 #include "Anticheat/Anticheat.hpp"
 #include "AI/ScriptDevAI/scripts/custom/Transmogrification.h"
 
+#include <openssl/md5.h>
+
 #include <mutex>
 #include <deque>
 #include <memory>
@@ -662,6 +664,12 @@ void WorldSession::LogoutPlayer()
         else if (_player->IsInCombat())
             _player->CombatStopWithPets(true, true);
 
+        if (_player->IsInLFG())
+            sWorld.GetLFGQueue().GetMessager().AddMessage([playerGuid = _player->GetObjectGuid()](LFGQueue* queue)
+        {
+            queue->RemovePlayerFromQueue(playerGuid, PLAYER_SYSTEM_LEAVE);
+        });
+
         // drop a flag if player is carrying it
         if (BattleGround* bg = _player->GetBattleGround())
             bg->EventPlayerLoggedOut(_player);
@@ -780,6 +788,7 @@ void WorldSession::LogoutPlayer()
         // calls to GetMap in this case may cause crashes
         if (_player->IsInWorld())
         {
+            _player->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_LEAVE_WORLD);
             Map* _map = _player->GetMap();
             _map->Remove(_player, true);
         }
@@ -1021,6 +1030,118 @@ void WorldSession::SendAuthWaitQue(uint32 position) const
         packet << uint32(position);     // position in queue
         SendPacket(packet, true);
     }
+}
+
+void WorldSession::LoadGlobalAccountData()
+{
+    LoadAccountData(
+        CharacterDatabase.PQuery("SELECT type, time, data FROM account_data WHERE account='%u'", GetAccountId()),
+        GLOBAL_CACHE_MASK
+    );
+}
+
+void WorldSession::LoadAccountData(QueryResult* result, uint32 mask)
+{
+    for (uint32 i = 0; i < NUM_ACCOUNT_DATA_TYPES; ++i)
+        if (mask & (1 << i))
+            m_accountData[i] = AccountData();
+
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+
+        uint32 type = fields[0].GetUInt32();
+        if (type >= NUM_ACCOUNT_DATA_TYPES)
+        {
+            sLog.outError("Table `%s` have invalid account data type (%u), ignore.",
+                mask == GLOBAL_CACHE_MASK ? "account_data" : "character_account_data", type);
+            continue;
+        }
+
+        if ((mask & (1 << type)) == 0)
+        {
+            sLog.outError("Table `%s` have non appropriate for table  account data type (%u), ignore.",
+                mask == GLOBAL_CACHE_MASK ? "account_data" : "character_account_data", type);
+            continue;
+        }
+
+        m_accountData[type].Time = time_t(fields[1].GetUInt64());
+        m_accountData[type].Data = fields[2].GetCppString();
+    } while (result->NextRow());
+
+    delete result;
+}
+
+void WorldSession::SetAccountData(AccountDataType type, time_t time_, const std::string& data)
+{
+    if ((1 << type) & GLOBAL_CACHE_MASK)
+    {
+        uint32 acc = GetAccountId();
+
+        static SqlStatementID delId;
+        static SqlStatementID insId;
+
+        CharacterDatabase.BeginTransaction();
+
+        SqlStatement stmt = CharacterDatabase.CreateStatement(delId, "DELETE FROM account_data WHERE account=? AND type=?");
+        stmt.PExecute(acc, uint32(type));
+
+        stmt = CharacterDatabase.CreateStatement(insId, "INSERT INTO account_data VALUES (?,?,?,?)");
+        stmt.PExecute(acc, uint32(type), uint64(time_), data.c_str());
+
+        CharacterDatabase.CommitTransaction();
+    }
+    else
+    {
+        // _player can be nullptr and packet received after logout but m_GUID still store correct guid
+        if (!m_GUIDLow)
+            return;
+
+        static SqlStatementID delId;
+        static SqlStatementID insId;
+
+        CharacterDatabase.BeginTransaction();
+
+        SqlStatement stmt = CharacterDatabase.CreateStatement(delId, "DELETE FROM character_account_data WHERE guid=? AND type=?");
+        stmt.PExecute(m_GUIDLow, uint32(type));
+
+        stmt = CharacterDatabase.CreateStatement(insId, "INSERT INTO character_account_data VALUES (?,?,?,?)");
+        stmt.PExecute(m_GUIDLow, uint32(type), uint64(time_), data.c_str());
+
+        CharacterDatabase.CommitTransaction();
+    }
+
+    m_accountData[type].Time = time_;
+    m_accountData[type].Data = data;
+}
+
+const uint8 emptyArray[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+
+void WorldSession::SendAccountDataTimes()
+{
+    WorldPacket data(SMSG_ACCOUNT_DATA_TIMES, NUM_ACCOUNT_DATA_TYPES * MD5_DIGEST_LENGTH);
+    for (AccountData const& itr : m_accountData)
+    {
+        if (itr.Data.empty())
+        {
+            for (int i = 0; i < MD5_DIGEST_LENGTH; i++)
+                data << uint8(0);
+        }
+        else
+        {
+            MD5_CTX md5;
+            MD5_Init(&md5);
+            MD5_Update(&md5, itr.Data.c_str(), itr.Data.size());
+
+            uint8 fileHash[MD5_DIGEST_LENGTH];
+            MD5_Final(fileHash, &md5);
+            data.append(fileHash, MD5_DIGEST_LENGTH);
+        }
+    }
+    SendPacket(data);
 }
 
 void WorldSession::LoadTutorialsData()

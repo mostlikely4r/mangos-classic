@@ -210,7 +210,8 @@ bool ChatHandler::HandleReloadAllAreaCommand(char* /*args*/)
 bool ChatHandler::HandleReloadAllLootCommand(char* /*args*/)
 {
     sLog.outString("Re-Loading Loot Tables...");
-    LoadLootTables();
+    LootIdSet ids_set;
+    LoadLootTables(ids_set);
     SendGlobalSysMessage("DB tables `*_loot_template` reloaded.");
     return true;
 }
@@ -529,7 +530,9 @@ bool ChatHandler::HandleReloadLootTemplatesMailCommand(char* /*args*/)
 bool ChatHandler::HandleReloadLootTemplatesReferenceCommand(char* /*args*/)
 {
     sLog.outString("Re-Loading Loot Tables... (`reference_loot_template`)");
-    LoadLootTemplates_Reference();
+    LootIdSet ids_set;
+    LoadLootTemplates_Reference(ids_set);
+    CheckLootTemplates_Reference(ids_set);
     SendGlobalSysMessage("DB table `reference_loot_template` reloaded.");
     return true;
 }
@@ -781,6 +784,16 @@ bool ChatHandler::HandleReloadEventAIScriptsCommand(char* /*args*/)
     sLog.outString("Re-Loading Scripts from `creature_ai_scripts`...");
     sEventAIMgr.LoadCreatureEventAI_Scripts();
     SendGlobalSysMessage("DB table `creature_ai_scripts` reloaded.");
+    auto containerEntry = sEventAIMgr.GetCreatureEventEntryAIMap();
+    auto containerGuid = sEventAIMgr.GetCreatureEventGuidAIMap();
+    auto containerComputed = sEventAIMgr.GetEAIComputedDataMap();
+    sMapMgr.DoForAllMaps([containerEntry, containerGuid, containerComputed](Map* map)
+    {
+        map->GetMessager().AddMessage([containerEntry, containerGuid, containerComputed](Map* map)
+        {
+            map->GetMapDataContainer().SetEventAIContainers(containerEntry, containerGuid, containerComputed);
+        });
+    });
     return true;
 }
 
@@ -3671,7 +3684,6 @@ bool ChatHandler::HandleNpcInfoCommand(char* /*args*/)
 
     PSendSysMessage(LANG_NPCINFO_CHAR, target->GetGuidStr().c_str(), faction, npcflags, Entry, displayid, nativeid);
 
-    PSendSysMessage("DbGuid: %u", target->GetDbGuid());
     PSendSysMessage(LANG_NPCINFO_LEVEL, target->GetLevel());
     PSendSysMessage(LANG_NPCINFO_HEALTH, target->GetCreateHealth(), target->GetMaxHealth(), target->GetHealth());
     PSendSysMessage(LANG_NPCINFO_FLAGS, target->GetUInt32Value(UNIT_FIELD_FLAGS), target->GetUInt32Value(UNIT_DYNAMIC_FLAGS), target->GetCreatureInfo()->ExtraFlags);
@@ -5726,7 +5738,7 @@ bool ChatHandler::HandleMovegensCommand(char* /*args*/)
         return false;
     }
 
-    PSendSysMessage(LANG_MOVEGENS_LIST, (unit->GetTypeId() == TYPEID_PLAYER ? "Player" : "Creature"), unit->GetGUIDLow());
+    PSendSysMessage("%s movement generators stack:", unit->GetGuidStr().c_str());
 
     MotionMaster* mm = unit->GetMotionMaster();
     float x, y, z;
@@ -5787,6 +5799,9 @@ bool ChatHandler::HandleMovegensCommand(char* /*args*/)
             case FLEEING_MOTION_TYPE:  SendSysMessage(LANG_MOVEGENS_FEAR);    break;
             case DISTRACT_MOTION_TYPE: SendSysMessage(LANG_MOVEGENS_DISTRACT);  break;
             case EFFECT_MOTION_TYPE: SendSysMessage(LANG_MOVEGENS_EFFECT);  break;
+            case FORMATION_MOTION_TYPE:
+                PSendSysMessage("   Formation movement, following [%s]", unit->GetFormationSlot()->GetMaster()->GetGuidStr().c_str());
+                break;
             default:
                 PSendSysMessage(LANG_MOVEGENS_UNKNOWN, (*itr)->GetMovementGeneratorType());
                 break;
