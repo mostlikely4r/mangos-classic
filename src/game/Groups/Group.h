@@ -35,6 +35,7 @@ class BattleGround;
 class DungeonPersistentState;
 class Field;
 class Unit;
+struct LFGGroupQueueInfo;
 
 #define MAX_GROUP_SIZE 5
 #define MAX_RAID_SIZE 40
@@ -292,7 +293,6 @@ class Group
 #ifdef ENABLE_PLAYERBOTS
         ObjectGuid GetTargetIcon(int index) { return m_targetIcons[index]; }
 #endif
-
     protected:
         bool _addMember(ObjectGuid guid, const char* name, bool isAssistant = false);
         bool _addMember(ObjectGuid guid, const char* name, bool isAssistant, uint8 group);

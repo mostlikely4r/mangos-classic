@@ -384,7 +384,7 @@ Unit* SingleEnemyTargetAura::GetTriggerTarget() const
     return ObjectAccessor::GetUnit(*(m_spellAuraHolder->GetTarget()), m_castersTargetGuid);
 }
 
-Aura* CreateAura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 const* currentDamage, int32 const* currentBasePoints, SpellAuraHolder* holder, Unit* target, Unit* caster, Item* castItem)
+Aura* CreateAura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 const* currentDamage, int32 const* currentBasePoints, SpellAuraHolder* holder, Unit* target, Unit* caster, Item* castItem, uint64 scriptValue)
 {
     Aura* aura = nullptr;
     if (IsAreaAuraEffect(spellproto->Effect[eff]))
@@ -393,6 +393,7 @@ Aura* CreateAura(SpellEntry const* spellproto, SpellEffectIndex eff, int32 const
     if (!aura)
         aura = new Aura(spellproto, eff, currentDamage, currentBasePoints, holder, target, caster, castItem);
 
+    aura->SetScriptValue(scriptValue); // must be done before OnAuraInit
     aura->OnAuraInit();
     return aura;
 }
@@ -3291,7 +3292,7 @@ void Aura::HandlePeriodicDamage(bool apply, bool Real)
         {
             // SpellDamageBonusDone for magic spells
             if (spellProto->DmgClass == SPELL_DAMAGE_CLASS_NONE || spellProto->DmgClass == SPELL_DAMAGE_CLASS_MAGIC)
-                m_modifier.m_amount = caster->SpellDamageBonusDone(target, GetSpellProto(), m_modifier.m_amount, DOT, GetStackAmount());
+                m_modifier.m_amount = caster->SpellDamageBonusDone(target, GetSpellSchoolMask(GetSpellProto()), GetSpellProto(), m_modifier.m_amount, DOT, GetStackAmount());
             // MeleeDamagebonusDone for weapon based spells
             else
             {
@@ -3335,7 +3336,7 @@ void Aura::HandlePeriodicLeech(bool apply, bool /*Real*/)
         if (!caster)
             return;
 
-        m_modifier.m_amount = caster->SpellDamageBonusDone(GetTarget(), GetSpellProto(), m_modifier.m_amount, DOT, GetStackAmount());
+        m_modifier.m_amount = caster->SpellDamageBonusDone(GetTarget(), GetSpellSchoolMask(GetSpellProto()), GetSpellProto(), m_modifier.m_amount, DOT, GetStackAmount());
     }
 }
 
@@ -3373,7 +3374,7 @@ void Aura::HandlePeriodicHealthFunnel(bool apply, bool /*Real*/)
         if (!caster)
             return;
 
-        m_modifier.m_amount = caster->SpellDamageBonusDone(GetTarget(), GetSpellProto(), m_modifier.m_amount, DOT, GetStackAmount());
+        m_modifier.m_amount = caster->SpellDamageBonusDone(GetTarget(), GetSpellSchoolMask(GetSpellProto()), GetSpellProto(), m_modifier.m_amount, DOT, GetStackAmount());
     }
 }
 
@@ -4622,7 +4623,7 @@ void Aura::PeriodicTick()
             bool isNotBleed = GetEffectMechanic(spellProto, m_effIndex) != MECHANIC_BLEED;
             // SpellDamageBonus for magic spells
             if ((spellProto->DmgClass == SPELL_DAMAGE_CLASS_NONE && isNotBleed) || spellProto->DmgClass == SPELL_DAMAGE_CLASS_MAGIC)
-                pdamage = target->SpellDamageBonusTaken(caster, spellProto, pdamage, DOT, GetStackAmount());
+                pdamage = target->SpellDamageBonusTaken(caster, GetSpellSchoolMask(spellProto), spellProto, pdamage, DOT, GetStackAmount());
             // MeleeDamagebonus for weapon based spells
             else
             {
@@ -4695,7 +4696,7 @@ void Aura::PeriodicTick()
             uint32 absorb = 0;
             int32 resist = 0;
 
-            pdamage = target->SpellDamageBonusTaken(pCaster, spellProto, pdamage, DOT, GetStackAmount());
+            pdamage = target->SpellDamageBonusTaken(pCaster, GetSpellSchoolMask(spellProto), spellProto, pdamage, DOT, GetStackAmount());
 
             target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), IsResistableSpell(spellProto));
 
@@ -4774,7 +4775,8 @@ void Aura::PeriodicTick()
 
             OnPeriodicCalculateAmount(pdamage);
 
-            if (target->IsImmuneToSchool(spellProto, (1 << GetEffIndex()))) // TODO: Check if we need to check for avoiding immune
+            // first aid confirmed to work through immune when selfcast
+            if (pCaster != target && target->IsImmuneToSchool(spellProto, (1 << GetEffIndex()))) // TODO: Check if we need to check for avoiding immune
             {
                 Unit::SendSpellOrDamageImmune(GetCasterGuid(), target, spellProto->Id);
                 break;
@@ -5258,7 +5260,7 @@ SpellAuraHolder::SpellAuraHolder(SpellEntry const* spellproto, Unit* target, Wor
 
     Unit* unitCaster = caster && caster->isType(TYPEMASK_UNIT) ? (Unit*)caster : nullptr;
 
-    m_duration = m_maxDuration = CalculateSpellDuration(spellproto, unitCaster);
+    m_duration = m_maxDuration = CalculateSpellDuration(spellproto, unitCaster, target, m_auraScript);
 
     if (m_maxDuration == -1 || (m_isPassive && spellproto->DurationIndex == 0))
         m_permanent = true;

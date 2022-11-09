@@ -44,8 +44,8 @@ struct LifeTap : public SpellScript
         if (Player* modOwner = caster->GetSpellModOwner())
             modOwner->ApplySpellMod(spell->m_spellInfo->Id, SPELLMOD_COST, cost);
 
-        int32 dmg = caster->SpellDamageBonusDone(caster, spell->m_spellInfo, uint32(cost > 0 ? cost : 0), SPELL_DIRECT_DAMAGE);
-        dmg = caster->SpellDamageBonusTaken(caster, spell->m_spellInfo, dmg, SPELL_DIRECT_DAMAGE);
+        int32 dmg = caster->SpellDamageBonusDone(caster, GetSpellSchoolMask(spell->m_spellInfo), spell->m_spellInfo, uint32(cost > 0 ? cost : 0), SPELL_DIRECT_DAMAGE);
+        dmg = caster->SpellDamageBonusTaken(caster, GetSpellSchoolMask(spell->m_spellInfo), spell->m_spellInfo, dmg, SPELL_DIRECT_DAMAGE);
         spell->SetScriptValue(dmg);
     }
 
@@ -142,7 +142,7 @@ struct DevourMagic : public SpellScript
             for (auto itr : auras)
             {
                 SpellEntry const* spell = itr.second->GetSpellProto();
-                if (itr.second->GetTarget()->GetObjectGuid() != caster->GetObjectGuid() && spell->Dispel == DISPEL_MAGIC && IsPositiveSpell(spell) && !IsPassiveSpell(spell))
+                if (itr.second->GetTarget()->GetObjectGuid() != caster->GetObjectGuid() && spell->Dispel == DISPEL_MAGIC && (caster->CanAssist(target) ? !IsPositiveSpell(spell) : IsPositiveSpell(spell)) && !IsPassiveSpell(spell))
                     return SPELL_CAST_OK;
             }
         }

@@ -72,6 +72,7 @@ enum MovementGeneratorType
     EFFECT_MOTION_TYPE              = 15,                   // WrapperMovementGenerator.h
     TAXI_MOTION_TYPE                = 16,                   // WaypointMovementGenerator.h
     TIMED_RANDOM_MOTION_TYPE        = 17,                   // RandomMovementGenerator.h
+    FALL_MOTION_TYPE                = 18,                   // WrapperMovementGenerator.h
 
     EXTERNAL_WAYPOINT_MOVE          = 18,                   // Only used in UnitAI::MovementInform when a waypoint is reached. The pathId >= 0 is added as additonal value
     EXTERNAL_WAYPOINT_MOVE_START    = 19,                   // Only used in UnitAI::MovementInform when a waypoint is started. The pathId >= 0 is added as additional value
@@ -119,10 +120,10 @@ enum MMCleanFlag
 
 enum ForcedMovement
 {
-    FORCED_MOVEMENT_NONE,
-    FORCED_MOVEMENT_WALK,
-    FORCED_MOVEMENT_RUN,
-    FORCED_MOVEMENT_FLIGHT,
+    FORCED_MOVEMENT_NONE    = 0,
+    FORCED_MOVEMENT_WALK    = 1,
+    FORCED_MOVEMENT_RUN     = 2,
+    FORCED_MOVEMENT_FLIGHT  = 3,
 };
 
 class MotionMaster : private std::stack<MovementGenerator*>

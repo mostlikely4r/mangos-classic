@@ -1,8 +1,5 @@
-/**
- * MaNGOS is a full featured server for World of Warcraft, supporting
- * the following clients: 1.12.x, 2.4.3, 3.3.5a, 4.3.4a and 5.4.8
- *
- * Copyright (C) 2005-2017  MaNGOS project <https://getmangos.eu>
+/*
+ * This file is part of the CMaNGOS Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,12 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * World of Warcraft, and all World of Warcraft or Warcraft art, images,
- * and lore are copyrighted by Blizzard Entertainment, Inc.
  */
 
-//#include "Policies/SingletonImp.h"
 #include "Common.h"
 #include "ProgressBar.h"
 #include "Globals/SharedDefines.h"
@@ -30,13 +23,13 @@
 #include "Maps/Map.h"
 #include "Globals/ObjectMgr.h"
 #include "Chat/Chat.h"
-#include "World.h"
+#include "World/World.h"
 #include "WorldPacket.h"
 #include "Server/WorldSession.h"
-#include "Language.h"
+#include "Tools/Language.h"
 #include "Groups/Group.h"
-#include "LFGMgr.h"
-#include "LFGHandler.h"
+#include "LFG/LFGMgr.h"
+#include "LFG/LFGQueue.h"
 
 INSTANTIATE_SINGLETON_1(LFGQueue);
 

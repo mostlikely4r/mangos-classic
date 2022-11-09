@@ -158,6 +158,8 @@ World::~World()
 
     VMAP::VMapFactory::clear();
     MMAP::MMapFactory::clear();
+
+    m_lfgQueueThread.join();
 }
 
 /// Cleanups before world stop
@@ -1236,7 +1238,8 @@ void World::SetInitialWorldSettings()
     sObjectMgr.LoadCorpses();
 
     sLog.outString("Loading Loot Tables...");
-    LoadLootTables();
+    LootIdSet ids_set;
+    LoadLootTables(ids_set);
     sLog.outString(">>> Loot Tables loaded");
     sLog.outString();
 
@@ -1429,6 +1432,7 @@ void World::SetInitialWorldSettings()
     ///- Initialize Battlegrounds
     sLog.outString("Starting BattleGround System");
     sBattleGroundMgr.CreateInitialBattleGrounds();
+    CheckLootTemplates_Reference(ids_set);
 
     sLog.outString("Deleting expired bans...");
     LoginDatabase.Execute("DELETE FROM ip_banned WHERE expires_at<=UNIX_TIMESTAMP() AND expires_at<>banned_at");
@@ -2099,6 +2103,14 @@ bool World::RemoveBanAccount(BanMode mode, const std::string& source, const std:
         WarnAccount(account, source, message, "UNBAN");
     }
     return true;
+}
+
+void World::StartLFGQueueThread()
+{
+    m_lfgQueueThread = std::thread([&]()
+    {
+        m_lfgQueue.Update();
+    });
 }
 
 /// Update the game time

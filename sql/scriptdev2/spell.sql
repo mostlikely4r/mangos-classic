@@ -106,6 +106,7 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (26686,'spell_aq_whirlwind'),
 (26767,'spell_cthun_tentacles_summon'),
 (26769,'spell_cthun_periodic_eye_trigger'),
+(27360,'spell_instill_lord_valthalaks_spirit'),
 (28006,'spell_arcane_cloaking'),
 (28282,'spell_ashbringer_item'),
 (27808,'spell_kel_thuzad_frost_blast'),
@@ -265,6 +266,11 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (6495,'spell_sentry_totem');
 
+-- Hunter
+INSERT INTO spell_scripts(Id, ScriptName) VALUES
+(1515,'spell_tame_beast_channel'),
+(13535,'spell_tame_beast_dummy');
+
 -- Food and Drink
 INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (433, 'spell_food_animation'),
@@ -337,6 +343,9 @@ INSERT INTO spell_scripts(Id, ScriptName) VALUES
 (23333,'spell_flag_aura_bg'),
 (23335,'spell_flag_aura_bg'),
 (29519,'spell_flag_aura_bg'),
+-- WSG
+(23383,'spell_flag_click_bg'),
+(23384,'spell_flag_click_bg'),
 -- Arathi basin
 (23936,'spell_battleground_banner_trigger'),
 (23932,'spell_battleground_banner_trigger'),

@@ -26,7 +26,8 @@
 
 Corpse::Corpse(CorpseType type) : WorldObject(),
     lootRecipient(nullptr),
-    lootForBody(false)
+    lootForBody(false),
+    m_rankSnapshot(0)
 {
     m_objectType |= TYPEMASK_CORPSE;
     m_objectTypeId = TYPEID_CORPSE;
@@ -63,7 +64,7 @@ void Corpse::RemoveFromWorld()
 
 bool Corpse::Create(uint32 guidlow)
 {
-    Object::_Create(guidlow, 0, HIGHGUID_CORPSE);
+    Object::_Create(guidlow, guidlow, 0, HIGHGUID_CORPSE);
     return true;
 }
 
@@ -93,6 +94,7 @@ bool Corpse::Create(uint32 guidlow, Player* owner)
     SetOwnerGuid(owner->GetObjectGuid());
 
     m_grid = MaNGOS::ComputeGridPair(GetPositionX(), GetPositionY());
+    m_rankSnapshot = owner->GetHonorRankInfo().rank;
 
     return true;
 }
@@ -161,7 +163,7 @@ bool Corpse::LoadFromDB(uint32 lowguid, Field* fields)
     float orientation   = fields[5].GetFloat();
     uint32 mapid        = fields[6].GetUInt32();
 
-    Object::_Create(lowguid, 0, HIGHGUID_CORPSE);
+    Object::_Create(lowguid, lowguid, 0, HIGHGUID_CORPSE);
 
     m_time = time_t(fields[7].GetUInt64());
     m_type = CorpseType(fields[8].GetUInt32());
@@ -270,4 +272,9 @@ bool Corpse::IsExpired(time_t t) const
     if (m_type == CORPSE_BONES)
         return m_time < t - 60 * MINUTE;
     return m_time < t - 3 * DAY;
+}
+
+Team Corpse::GetTeam() const
+{
+    return Player::TeamForRace(getRace());
 }

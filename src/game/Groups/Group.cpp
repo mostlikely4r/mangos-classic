@@ -33,6 +33,8 @@
 #include "Maps/MapPersistentStateMgr.h"
 #include "LFG/LFGMgr.h"
 #include "LFG/LFGHandler.h"
+//#include "LFG/LFGQueue.h"
+
 #ifdef BUILD_PLAYERBOT
 #include "PlayerBot/Base/PlayerbotMgr.h"
 #endif
@@ -357,7 +359,7 @@ bool Group::AddMember(ObjectGuid guid, const char* name, uint8 joinMethod)
             player->SendDirectMessage(groupDataPacket);
         }
 
-        if (!IsLeader(player->GetObjectGuid()) && sLFGMgr.IsPlayerInQueue(player->GetObjectGuid()))
+       if (!IsLeader(player->GetObjectGuid()) && sLFGMgr.IsPlayerInQueue(player->GetObjectGuid()))
         {
             bool notifyPlayer = true; // show "you have left queue" message only if different dungeons
             if (IsInLFG())
@@ -375,6 +377,7 @@ bool Group::AddMember(ObjectGuid guid, const char* name, uint8 joinMethod)
         {
             if (joinMethod != GROUP_LFG)
             {
+
                 player->GetSession()->SendMeetingstoneSetqueue(m_LFGAreaId, MEETINGSTONE_STATUS_JOINED_QUEUE);
                 sLFGMgr.UpdateGroup(m_Id);
             }
@@ -399,6 +402,7 @@ uint32 Group::RemoveMember(ObjectGuid guid, uint8 method)
     if (GetMembersCount() > GetMembersMinCount())
     {
         bool leaderChanged = _removeMember(guid);
+        bool leftGroup = false;
 
         if (player)
         {
@@ -456,16 +460,16 @@ uint32 Group::RemoveMember(ObjectGuid guid, uint8 method)
 
         if (leaderChanged)
         {
+            leftGroup = true;
+
             WorldPacket data(SMSG_GROUP_SET_LEADER, (m_leaderName.size() + 1));
             data << m_leaderName;
             BroadcastPacket(data, true);
-
             sLFGMgr.RemoveGroupFromQueue(m_Id);
         }
 
         if (IsInLFG())
             sLFGMgr.UpdateGroup(m_Id);
-
         SendUpdate();
     }
     // if group before remove <= 2 disband it
@@ -1625,6 +1629,7 @@ void Group::CalculateLFGRoles(LFGGroupQueueInfo& data)
 
     data.availableRoles = (LfgRoles)m_initRoles;
     data.dpsCount = dpsCount;
+    //data.playerCount = GetMembersCount();
 }
 
 bool Group::FillPremadeLFG(ObjectGuid const& plrGuid, Classes playerClass, LfgRoles requiredRole, uint32& InitRoles,
@@ -1632,6 +1637,7 @@ bool Group::FillPremadeLFG(ObjectGuid const& plrGuid, Classes playerClass, LfgRo
 {
     // We grant the role unless someone else in the group has higher priority for it
     LfgRolePriority priority = LFGQueue::GetPriority(playerClass, requiredRole);
+
 
     for (const auto& citr : GetMemberSlots())
     {

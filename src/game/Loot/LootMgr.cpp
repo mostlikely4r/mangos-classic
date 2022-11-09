@@ -29,6 +29,7 @@
 #include "Entities/ItemEnchantmentMgr.h"
 #include "Entities/Corpse.h"
 #include "Tools/Language.h"
+#include "BattleGround/BattleGroundMgr.h"
 #include <sstream>
 #include <iomanip>
 
@@ -1808,6 +1809,8 @@ Loot::Loot(Player* player, Corpse* corpse, LootType type) :
     if (type != LOOT_INSIGNIA && corpse->GetType() == CORPSE_BONES)
         return;
 
+    MANGOS_ASSERT(player->GetBattleGround());
+
     if (!corpse->lootForBody)
     {
         corpse->lootForBody = true;
@@ -1898,7 +1901,7 @@ Loot::Loot(Player* player, Corpse* corpse, LootType type) :
                 }
             }
         }
-        
+       
         // It may need a better formula
         // Now it works like this: lvl10: ~6copper, lvl70: ~9silver
         m_gold = (uint32)(urand(50, 150) * 0.016f * pow(((float)pLevel) / 5.76f, 2.5f) * sWorld.getConfig(CONFIG_FLOAT_RATE_DROP_MONEY));
@@ -2890,11 +2893,13 @@ void LoadLootTemplates_Skinning()
     LootTemplates_Skinning.ReportUnusedIds(ids_set);
 }
 
-void LoadLootTemplates_Reference()
-{
-    LootIdSet ids_set;
+void LoadLootTemplates_Reference(LootIdSet& ids_set)
+{    
     LootTemplates_Reference.LoadAndCollectLootIds(ids_set);
+}
 
+void CheckLootTemplates_Reference(LootIdSet& ids_set)
+{
     // check references and remove used
     LootTemplates_Creature.CheckLootRefs(&ids_set);
     LootTemplates_Fishing.CheckLootRefs(&ids_set);
@@ -2905,6 +2910,9 @@ void LoadLootTemplates_Reference()
     LootTemplates_Disenchant.CheckLootRefs(&ids_set);
     LootTemplates_Mail.CheckLootRefs(&ids_set);
     LootTemplates_Reference.CheckLootRefs(&ids_set);
+    auto& usedIds = sBattleGroundMgr.GetUsedRefLootIds();
+    for (uint32 refLootId : usedIds)
+        ids_set.erase(refLootId);
 
     // output error for any still listed ids (not referenced from any loot table)
     LootTemplates_Reference.ReportUnusedIds(ids_set);
@@ -3066,4 +3074,9 @@ void LootMgr::CheckDropStats(ChatHandler& chat, uint32 amountOfCheck, uint32 loo
         chat.PSendSysMessage(LANG_ITEM_LIST_CHAT, itemId, itemId, name.c_str(), ss.str().c_str());
         sLog.outString("%6u - %-45s \tfound %6u/%-6u \tso %8s%% drop", itemStat.first, name.c_str(), itemStat.second, amountOfCheck, ss.str().c_str());
     }
+}
+
+bool LootMgr::ExistsRefLootTemplate(uint32 refLootId) const
+{
+    return LootTemplates_Reference.HaveLootFor(refLootId);
 }
