@@ -26,8 +26,6 @@
 #include "BattleGround/BattleGround.h"
 #include "Server/DBCEnums.h"
 #include "Globals/SharedDefines.h"
-//ike3 #include "LFG/LFGHandler.h"
-
 #include "LFG/LFGMgr.h"
 
 class WorldSession;

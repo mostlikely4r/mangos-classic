@@ -283,3 +283,53 @@ void AddSC_war_effort()
     pNewScript->GetAI = &GetNewAIInstance<SilithusBossAI>;
     pNewScript->RegisterSelf();
 }
+
+uint32 WorldState::GetResourceItemStack(AQResources resource)
+{
+    uint32 resourceStack = 20;
+    uint32 questId = 0;
+    switch (resource)
+    {
+        // common
+    case AQ_COPPER_BAR_HORDE: questId = QUEST_HORDE_COPPER_BARS_1; break;
+    case AQ_COPPER_BAR_ALLY: questId = QUEST_ALLIANCE_COPPER_BARS_1; break;
+    case AQ_PURPLE_LOTUS_ALLY: questId = QUEST_ALLIANCE_PURPLE_LOTUS_1; break;
+    case AQ_SPOTTED_YELLOWTAIL_ALLY: questId = QUEST_ALLIANCE_SPOTTED_YELLOWTAIL_1; break;
+    case AQ_SPOTTED_YELLOWTAIL_HORDE: questId = QUEST_HORDE_SPOTTED_YELLOWTAIL_1; break;
+    case AQ_THICK_LEATHER_ALLY: questId = QUEST_ALLIANCE_THICK_LEATHER_1; break;
+    case AQ_THICK_LEATHER_HORDE: questId = QUEST_HORDE_THICK_LEATHER_1; break;
+    case AQ_RUNECLOTH_BANDAGE_ALLY: questId = QUEST_ALLIANCE_RUNECLOTH_BANDAGES_1; break;
+    case AQ_RUNECLOTH_BANDAGE_HORDE: questId = QUEST_HORDE_RUNECLOTH_BANDAGES_1; break;
+    case AQ_PURPLE_LOTUS_HORDE: questId = QUEST_HORDE_PURPLE_LOTUS_1; break;
+        // horde
+    case AQ_PEACEBLOOM: questId = QUEST_HORDE_PEACEBLOOM_1; break;
+    case AQ_WOOL_BANDAGE: questId = QUEST_HORDE_WOOL_BANDAGES_1; break;
+    case AQ_LEAN_WOLF_STEAK: questId = QUEST_HORDE_LEAN_WOLF_STEAKS_1; break;
+    case AQ_TIN_BAR: questId = QUEST_HORDE_TIN_BARS_1; break;
+    case AQ_FIREBLOOM: questId = QUEST_HORDE_FIREBLOOM_1; break;
+    case AQ_HEAVY_LEATHER: questId = QUEST_HORDE_HEAVY_LEATHER_1; break;
+    case AQ_MITHRIL_BAR: questId = QUEST_HORDE_MITHRIL_BARS_1; break;
+    case AQ_BAKED_SALMON: questId = QUEST_HORDE_BAKED_SALMON_1; break;
+    case AQ_RUGGED_LEATHER: questId = QUEST_HORDE_RUGGED_LEATHER_1; break;
+    case AQ_MAGEWEAVE_BANDAGE: questId = QUEST_HORDE_MAGEWEAVE_BANDAGE_1; break;
+        // alliance
+    case AQ_LINEN_BANDAGE: questId = QUEST_ALLIANCE_LINEN_BANDAGE_1; break;
+    case AQ_RAINBOW_FIN_ALBACORE: questId = QUEST_ALLIANCE_RAINBOW_FIN_ALBACORE_1; break;
+    case AQ_LIGHT_LEATHER: questId = QUEST_ALLIANCE_LIGHT_LEATHER_1; break;
+    case AQ_STRANGLEKELP: questId = QUEST_ALLIANCE_STRANGLEKELP_1; break;
+    case AQ_MEDIUM_LEATHER: questId = QUEST_ALLIANCE_MEDIUM_LEATHER_1; break;
+    case AQ_SILK_BANDAGE: questId = QUEST_ALLIANCE_SILK_BANDAGES_1; break;
+    case AQ_IRON_BAR: questId = QUEST_ALLIANCE_IRON_BARS_1; break;
+    case AQ_ROAST_RAPTOR: questId = QUEST_ALLIANCE_ROAST_RAPTOR_1; break;
+    case AQ_ARTHAS_TEARS: questId = QUEST_ALLIANCE_ARTHAS_TEARS_1; break;
+    case AQ_THORIUM_BAR: questId = QUEST_ALLIANCE_THORIUM_BARS_1; break;
+    default: return resourceStack;
+    }
+
+    if (questId)
+    {
+        if (const Quest* qInfo = sObjectMgr.GetQuestTemplate(questId))
+            resourceStack = qInfo->ReqItemCount[0];
+    }
+    return resourceStack;
+}

@@ -71,114 +71,125 @@ void LFGQueue::Update()
         uint32 diff = (now - previously).count();
         previously = now;
 
-        if (m_queuedGroups.empty() && m_queuedPlayers.empty())
+    if (m_queuedGroups.empty() && m_queuedPlayers.empty())
             continue;
 
-        // Iterate over QueuedPlayersMap to update players timers and remove offline/disconnected players.
+    // Iterate over QueuedPlayersMap to update players timers and remove offline/disconnected players.
         for (auto itr = m_queuedPlayers.begin(); itr != m_queuedPlayers.end();)
-        {
+    {
             itr->second.timeInLFG += diff;
 
-            // Update player timer and give him queue priority.
+        // Update player timer and give him queue priority.
             if (itr->second.timeInLFG >= (30 * MINUTE * IN_MILLISECONDS))
                 itr->second.hasQueuePriority = true;
 
-            // if matchmaking enabled, ignore talents after some time (default 5 min)
+        // if matchmaking enabled, ignore talents after some time (default 5 min)
             if (sWorld.getConfig(CONFIG_BOOL_LFG_MATCHMAKING) && itr->second.timeInLFG >= (sWorld.getConfig(CONFIG_UINT32_LFG_MATCHMAKING_TIMER) * IN_MILLISECONDS))
-            {
+        {
                 itr->second.rolePriority.clear();
                 itr->second.CalculateRoles((Classes)itr->second.playerClass);
-            }
-
-            ++itr;
         }
 
-        if (!m_queuedGroups.empty())
+            ++itr;
+    }
+
+    if (!m_queuedGroups.empty())
+    {
+        // Iterate over QueuedGroupsMap to fill groups with roles they're missing.
+        for (QueuedGroupsMap::iterator qGroup = m_queuedGroups.begin(); qGroup != m_queuedGroups.end();)
         {
-            // Iterate over QueuedGroupsMap to fill groups with roles they're missing.
-            for (QueuedGroupsMap::iterator qGroup = m_queuedGroups.begin(); qGroup != m_queuedGroups.end();)
+            // Remove group from queue if it has been filled by players manually inviting.
+            // We fill 1 group per update since removing it from the queue invalidates
+            // the iterator and we can save on performance a little.
+#ifdef ENABLE_PLAYERBOTS
+            if (qGroup->second.playerCount == 5)
             {
-                // Remove group from queue if it has been filled by players manually inviting.
-                // We fill 1 group per update since removing it from the queue invalidates
-                // the iterator and we can save on performance a little.
-                // Iterate over QueuedPlayersMap to find suitable player to join group
-                QueuedPlayersMap::iterator next = m_queuedPlayers.begin();
-                for (QueuedPlayersMap::iterator qPlayer = next; next != m_queuedPlayers.end(); qPlayer = next)
+                TeleportGroupToStone(qGroup->first, qGroup->second.areaId); // TODO: add config
+                RemoveGroupFromQueue(qGroup->first, GROUP_SYSTEM_LEAVE);
+                break;
+            }
+#endif
+            // Iterate over QueuedPlayersMap to find suitable player to join group
+            QueuedPlayersMap::iterator next = m_queuedPlayers.begin();
+            for (QueuedPlayersMap::iterator qPlayer = next; next != m_queuedPlayers.end(); qPlayer = next)
+            {
+                // Pre-increment iterator here since FindRoleToGroup() may remove qPlayer
+                // from the map
+                ++next;
+
+                // Check here that players team and areaId they're in queue are same
+                if (qPlayer->second.team == qGroup->second.team &&
+                    qPlayer->second.areaId == qGroup->second.areaId)
                 {
-                    // Pre-increment iterator here since FindRoleToGroup() may remove qPlayer
-                    // from the map
-                    ++next;
-
-                    // Check here that players team and areaId they're in queue are same
-                    if (qPlayer->second.team == qGroup->second.team &&
-                        qPlayer->second.areaId == qGroup->second.areaId)
+                    bool groupFound = false;
+                    // Find any role that this player matches and that the group requires. If none,
+                    // then continue onto the next group.
+                    for (LfgRoles role : PotentialRoles)
                     {
-                        bool groupFound = false;
-                        // Find any role that this player matches and that the group requires. If none,
-                        // then continue onto the next group.
-                        for (LfgRoles role : PotentialRoles)
-                        {
-                            if (!(qPlayer->second.roleMask & role))
-                                continue;
+                        if (!(qPlayer->second.roleMask & role))
+                            continue;
 
-                            if ((role & qGroup->second.availableRoles) == role && FindRoleToGroup(qPlayer->first, qGroup->first, role))
-                            {
-                                groupFound = true;
-                                break;
-                            }
-                        }
-
-                        // If we found a group and it's now full, break. If it's not full,
-                        // go onto the next player and maybe they can fill it.
-                        if (groupFound && qGroup->second.playerCount == 5)
+                        if ((role & qGroup->second.availableRoles) == role && FindRoleToGroup(qPlayer->first, qGroup->first, role))
                         {
+                            groupFound = true;
                             break;
                         }
                     }
-                }
 
-                if (qGroup->second.playerCount == 5)
-                {
-                    RemoveGroupFromQueue(qGroup->first, GROUP_SYSTEM_LEAVE);
-                    break;
-                }
-
-                // Update group timer. After each 5 minutes group will be broadcasted they're still waiting more members.
-                if (qGroup->second.groupTimer <= diff)
-                {
-                    qGroup->second.groupTimer = 5 * MINUTE * IN_MILLISECONDS;
-
-                    sWorld.GetMessager().AddMessage([groupId = qGroup->first](World* world)
+                    // If we found a group and it's now full, break. If it's not full,
+                    // go onto the next player and maybe they can fill it.
+                    if (groupFound && qGroup->second.playerCount == 5)
                     {
-                        Group* group = sObjectMgr.GetGroupById(groupId);
-
-                        WorldPacket data;
-                        LFGMgr::BuildInProgressPacket(data);
-
-                        group->BroadcastPacket(data, true);
-                    });
+                        break;
+                    }
                 }
-                else
-                {
-                    qGroup->second.groupTimer -= diff;
-                }
-
-                ++qGroup;
             }
-        }
 
-        // Pick first 2 players and form group out of them also inserting them into queue as group.
-        if (m_queuedPlayers.size() >= m_groupSize)
-        {
-            // Pick Leader as first target.
-            QueuedPlayersMap::iterator leader = m_queuedPlayers.begin();
-
-            std::list<ObjectGuid> playersInArea;
-            FindInArea(playersInArea, leader->second.areaId, leader->second.team, leader->first);
-
-            // 4 players + the leader
-            if (playersInArea.size() >= m_groupSize - 1)
+            if (qGroup->second.playerCount == 5)
             {
+#ifdef ENABLE_PLAYERBOTS
+                TeleportGroupToStone(qGroup->first, qGroup->second.areaId); // TODO: add config
+#endif
+                RemoveGroupFromQueue(qGroup->first, GROUP_SYSTEM_LEAVE);
+                break;
+            }
+
+            // Update group timer. After each 5 minutes group will be broadcasted they're still waiting more members.
+            if (qGroup->second.groupTimer <= diff)
+            {
+                qGroup->second.groupTimer = 5 * MINUTE * IN_MILLISECONDS;
+
+                sWorld.GetMessager().AddMessage([groupId = qGroup->first](World* world)
+                {
+                    Group* group = sObjectMgr.GetGroupById(groupId);
+
+                    WorldPacket data;
+                    LFGMgr::BuildInProgressPacket(data);
+
+                    group->BroadcastPacket(data, true);
+                });
+            }
+            else
+            {
+                qGroup->second.groupTimer -= diff;
+            }
+
+            ++qGroup;
+        }
+    }
+
+    // Pick first 2 players and form group out of them also inserting them into queue as group.
+    if (m_queuedPlayers.size() >= m_groupSize)
+    {
+        // Pick Leader as first target.
+        QueuedPlayersMap::iterator leader = m_queuedPlayers.begin();
+
+        std::list<ObjectGuid> playersInArea;
+        FindInArea(playersInArea, leader->second.areaId, leader->second.team, leader->first);
+
+        // 4 players + the leader
+            if (playersInArea.size() >= m_groupSize - 1)
+        {
                 ObjectGuid leaderGuid = leader->first;
                 ObjectGuid memberGuid = playersInArea.front();
                 uint32 areaId = leader->second.areaId;
@@ -187,7 +198,7 @@ void LFGQueue::Update()
                 RemovePlayerFromQueue(memberGuid, PLAYER_SYSTEM_LEAVE);
 
                 sWorld.GetMessager().AddMessage([leaderGuid, memberGuid, areaId](World* world)
-                {
+            {
                     Player* leader = sObjectMgr.GetPlayer(leaderGuid);
                     Player* member = sObjectMgr.GetPlayer(memberGuid);
 
@@ -196,19 +207,19 @@ void LFGQueue::Update()
 
                     leader->GetSession()->SendPacket(data);
 
-                    Group* newQueueGroup = new Group;
-                    if (!newQueueGroup->IsCreated())
-                    {
+            Group* newQueueGroup = new Group;
+            if (!newQueueGroup->IsCreated())
+            {
                         if (newQueueGroup->Create(leader->GetObjectGuid(), leader->GetName()))
-                            sObjectMgr.AddGroup(newQueueGroup);
-                        else
+                    sObjectMgr.AddGroup(newQueueGroup);
+                else
                         {
                             // should never be reached for a newly created group
                             MANGOS_ASSERT(false);
                         }
-                    }
+            }
 
-                    // Add member to the group. Leader is already added upon creation of group.
+            // Add member to the group. Leader is already added upon creation of group.
                     newQueueGroup->AddMember(member->GetObjectGuid(), member->GetName(), GROUP_LFG);
 
                     // Add this new group to GroupQueue now and remove players from PlayerQueue - there will be a moment in time when the group isnt in queue
@@ -355,6 +366,7 @@ bool LFGQueue::FindRoleToGroup(ObjectGuid playerGuid, uint32 groupId, LfgRoles r
                 }
                 break;
             }
+
             default:
             {
                 return false;
@@ -371,11 +383,11 @@ bool LFGQueue::FindRoleToGroup(ObjectGuid playerGuid, uint32 groupId, LfgRoles r
             Group* group = sObjectMgr.GetGroupById(groupId);
             Player* player = sObjectMgr.GetPlayer(playerGuid);
 
-            WorldPacket data;
+        WorldPacket data;
             LFGMgr::BuildMemberAddedPacket(data, playerGuid);
-            group->BroadcastPacket(data, true);
+        group->BroadcastPacket(data, true);
 
-            // Add member to the group.
+        // Add member to the group.
             group->AddMember(playerGuid, player->GetName(), GROUP_LFG);
         });
 
@@ -471,3 +483,139 @@ void LFGQueue::RestoreOfflinePlayer(ObjectGuid playerGuid)
         });
     }
 }
+#ifdef ENABLE_PLAYERBOTS
+void LFGQueue::GetPlayerQueueInfo(LFGPlayerQueueInfo* info, ObjectGuid const& plrGuid)
+{
+    QueuedPlayersMap::iterator iter = m_queuedPlayers.find(plrGuid);
+    if (iter != m_queuedPlayers.end())
+        *info = iter->second;
+
+    return;
+}
+
+void LFGQueue::GetGroupQueueInfo(LFGGroupQueueInfo* info, uint32 groupId)
+{
+    QueuedGroupsMap::iterator iter = m_queuedGroups.find(groupId);
+    if (iter != m_queuedGroups.end())
+        *info = iter->second;
+
+    return;
+}
+
+void LFGQueue::LoadMeetingStones()
+{
+    m_MeetingStonesMap.clear();
+    uint32 count = 0;
+    for (uint32 i = 0; i < sGOStorage.GetMaxEntry(); ++i)
+    {
+        auto data = sGOStorage.LookupEntry<GameObjectInfo>(i);
+        if (data && data->type == GAMEOBJECT_TYPE_MEETINGSTONE)
+        {
+            AreaTableEntry const* area = GetAreaEntryByAreaID(data->meetingstone.areaID);
+            if (area)
+            {
+                AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(data->meetingstone.areaID);
+                MeetingStoneInfo info;
+                info.area = data->meetingstone.areaID;
+                info.minlevel = data->meetingstone.minLevel;
+                info.maxlevel = data->meetingstone.maxLevel;
+                info.name = area->area_name[0];
+                // get stone position
+                Position stonePosition = Position();
+                uint32 mapId = 0;
+                FindGOData worker(i, nullptr);
+                sObjectMgr.DoGOData(worker);
+                GameObjectDataPair const* dataPair = worker.GetResult();
+                if (dataPair)
+                {
+                    GameObjectData const* data = &dataPair->second;
+                    stonePosition = Position(data->posX, data->posY, data->posZ, 0.f);
+                    mapId = data->mapid;
+                }
+                info.position = stonePosition;
+                info.mapId = mapId;
+                m_MeetingStonesMap.insert(std::make_pair(data->id, info));
+                sLog.outDetail(">> Loaded Meeting Stone Entry:%d, Area:%d, Level:%d - %d, Name:%s", i, info.area, info.minlevel, info.maxlevel, info.name);
+                count++;
+            }
+        }
+    }
+
+    sLog.outString(">> Loaded %u Meeting Stones", count);
+    sLog.outString();
+}
+
+MeetingStoneSet LFGQueue::GetDungeonsForPlayer(Player* player)
+{
+    MeetingStoneSet list;
+    uint32 level = player->GetLevel();
+    for (MeetingStonesMap::iterator it = m_MeetingStonesMap.begin(); it != m_MeetingStonesMap.end(); ++it)
+    {
+        MeetingStoneInfo data = it->second;
+
+        if (data.maxlevel && data.maxlevel < level)
+            continue;
+
+        if (data.minlevel && data.minlevel > level)
+            continue;
+
+        list.insert(list.end(), data);
+    }
+    return list;
+}
+
+void LFGQueue::TeleportGroupToStone(uint32 groupId, uint32 areaId)
+{
+    Group* grp = sObjectMgr.GetGroupById(groupId);
+
+    if (!grp)
+        return;
+
+    // custom teleport to dungeon
+    for (MeetingStonesMap::iterator it = m_MeetingStonesMap.begin(); it != m_MeetingStonesMap.end(); ++it)
+    {
+        MeetingStoneInfo data = it->second;
+        if (data.area != areaId)
+            continue;
+
+        if (data.position.IsEmpty())
+            continue;
+
+        // get map of stone
+        Map* stoneMap = sMapMgr.FindMap(data.mapId);
+        if (!stoneMap)
+            continue;
+
+        AreaTableEntry const* entry = GetAreaEntryByAreaID(data.area);
+        if (!entry)
+            continue;
+
+        // calculate random teleport position near stone
+        float x = data.position.x;
+        float y = data.position.y;
+        float z = data.position.z;
+        stoneMap->GetReachableRandomPointOnGround(x, y, z, 20.f);
+        // send teleport offer
+        for (GroupReference* ref = grp->GetFirstMember(); ref != nullptr; ref = ref->next())
+        {
+            if (Player* member = ref->getSource())
+            {
+                // dont summon if already has summon request
+                if (member->HasSummonOffer())
+                    continue;
+
+                // dont summon if close
+                if (member->GetMapId() == data.mapId && member->IsWithinDist2d(data.position.x, data.position.y, 100.f))
+                    continue;
+
+                member->SetSummonPoint(data.mapId, x, y, z, grp->GetLeaderGuid());
+                WorldPacket data(SMSG_SUMMON_REQUEST, 8 + 4 + 4);
+                data << grp->GetLeaderGuid();                               // summoner guid
+                data << uint32(entry->zone != 0 ? entry->zone : entry->ID); // summoner zone
+                data << uint32(MAX_PLAYER_SUMMON_DELAY * IN_MILLISECONDS);  // auto decline after msecs
+                member->GetSession()->SendPacket(data);
+            }
+        }
+    }
+}
+#endif
