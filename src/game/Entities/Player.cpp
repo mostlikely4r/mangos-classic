@@ -1540,6 +1540,9 @@ void Player::Update(const uint32 diff)
     {
         if (diff >= m_DetectInvTimer)
         {
+#ifdef ENABLE_PLAYERBOTS
+            if(isRealPlayer())
+#endif
             HandleStealthedUnitsDetection();
             m_DetectInvTimer = GetMap()->IsBattleGround() ? 500 : 2000;
         }
@@ -14494,9 +14497,18 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
 
     _LoadActions(holder->GetResult(PLAYER_LOGIN_QUERY_LOADACTIONS));
 
-    _LoadForgottenSkills(holder->GetResult(PLAYER_LOGIN_QUERY_FORGOTTEN_SKILLS));
-
+#ifdef ENABLE_PLAYERBOTS
+    if (isRealPlayer())
     m_social = sSocialMgr.LoadFromDB(holder->GetResult(PLAYER_LOGIN_QUERY_LOADSOCIALLIST), GetObjectGuid());
+    else
+    {
+#endif
+
+        m_social = new PlayerSocial();
+        m_social->SetPlayerGuid(GetObjectGuid());
+#ifdef ENABLE_PLAYERBOTS
+    }
+#endif
 
     Taxi::DestID destOrphan = 0;
     if (!m_taxiTracker.Load(taxi_nodes, destOrphan))

@@ -125,7 +125,12 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(QueryResult * dummy, SqlQuery
     WorldSession *botSession = new WorldSession(botAccountId, NULL, SEC_PLAYER, 0, LOCALE_enUS, "", 0);
     botSession->SetNoAnticheat();
 
+    // has bot already been added?
+    if (sObjectMgr.GetPlayer(lqh->GetGuid()))
+        return;
+
     uint32 guid = lqh->GetGuid().GetRawValue();
+
     botSession->HandlePlayerLogin(lqh); // will delete lqh
 
     Player* bot = botSession->GetPlayer();
@@ -236,12 +241,9 @@ class CharacterHandler
             Player* player = sObjectMgr.GetPlayer(guid, true);
             if (player)
             {
-                if (!sRandomPlayerbotMgr.IsRandomBot(player))
-                {
-                    player->SetPlayerbotMgr(new PlayerbotMgr(player));
-                    player->GetPlayerbotMgr()->OnPlayerLogin(player);
-                    sRandomPlayerbotMgr.OnPlayerLogin(player);
-                }
+                player->SetPlayerbotMgr(new PlayerbotMgr(player));
+                player->GetPlayerbotMgr()->OnPlayerLogin(player);
+                sRandomPlayerbotMgr.OnPlayerLogin(player);
             }
 #endif
         }
@@ -604,7 +606,33 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket& recv_data)
         SendPacket(data, true);
         return;
     }
+#ifdef ENABLE_PLAYERBOTS
+    if (pCurrChar && pCurrChar->GetPlayerbotAI())
+    {
+        WorldSession* botSession = pCurrChar->GetSession();
+        SetPlayer(pCurrChar, playerGuid);
+        _player->SetSession(this);
+        _logoutTime = time(0);
 
+        m_sessionDbcLocale = botSession->m_sessionDbcLocale;
+        m_sessionDbLocaleIndex = botSession->m_sessionDbLocaleIndex;
+        
+        PlayerbotMgr* mgr = _player->GetPlayerbotMgr();
+        if (!mgr || mgr->GetMaster() != _player)
+        {
+            _player->SetPlayerbotMgr(NULL);
+            delete mgr;
+            _player->SetPlayerbotMgr(new PlayerbotMgr(_player));
+            _player->GetPlayerbotMgr()->OnPlayerLogin(_player);
+
+            if (sRandomPlayerbotMgr.GetPlayerBot(playerGuid))
+
+                sRandomPlayerbotMgr.MovePlayerBot(playerGuid, _player->GetPlayerbotMgr());
+            else
+                _player->GetPlayerbotMgr()->OnBotLogin(_player);
+        }
+    }
+#endif
     if (_player)
     {
         // player is reconnecting
