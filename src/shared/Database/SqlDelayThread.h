@@ -35,7 +35,9 @@ class SqlDelayThread : public MaNGOS::Runnable
 {
     private:
         std::mutex m_queueMutex;
+    public:
         std::queue<std::unique_ptr<SqlOperation>> m_sqlQueue;   ///< Queue of SQL statements
+    private:
         Database* m_dbEngine;                                   ///< Pointer to used Database engine
         SqlConnection* m_dbConnection;                          ///< Pointer to DB connection
         std::atomic<bool> m_running;

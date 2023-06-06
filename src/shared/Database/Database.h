@@ -37,10 +37,65 @@ class Database;
 
 #define MAX_QUERY_LEN   (32*1024)
 
+/*
+    if (cmd.find("sql") == 0)
+    {
+        vector < pair<string, pair<double, double>>> ss;
+
+        std::unordered_map<std::string, std::pair<double, double>> tstats;
+
+        for (auto& s : CharacterDatabase.m_threadBody->m_dbConnection->stats)
+        {
+            string key = s.first, newkey;
+
+            std::size_t startPos = 0;
+            std::size_t endPos = 0;
+
+            while (startPos != std::string::npos && endPos != std::string::npos) {
+                startPos = key.find('\'', startPos);
+                endPos = key.find('\'', startPos + 1);
+
+                if (startPos != std::string::npos && endPos != std::string::npos) {
+                    key.replace(startPos, endPos - startPos + 1, "\"var\"");
+                }
+            }
+
+            tstats[key].first += s.second.first;
+            tstats[key].second += s.second.second;
+        }
+
+        for (auto& s : tstats)
+            ss.push_back(make_pair(s.first, make_pair(s.second.first, s.second.second)));
+
+        sort(ss.begin(), ss.end(), [](pair<string, pair<double, double>> i, pair<string, pair<double, double>> j) {return i.second.second > j.second.second; });
+
+        uint32 n = 25;
+
+        if(cmd.size() > 4)
+            n = stoi(cmd.substr(4));
+
+        sLog.outString("Current queue statement: %s", CharacterDatabase.m_threadBody->m_dbConnection->lastStatement.c_str());
+
+        sLog.outString("avg time - total amount - statement");
+
+        for (auto& s : ss)
+        {
+            sLog.outString("%.3fms - %d - %s", s.second.second / s.second.first, (uint64)s.second.first, s.first.c_str());
+            n--;
+            if (!n)
+                break;
+        }
+        return true;
+    }
+    */
+
 //
 class SqlConnection
 {
     public:
+        std::string lastStatement;
+        std::unordered_map<std::string, std::pair<double, double>> stats;
+
         virtual ~SqlConnection() {}
 
         // method for initializing DB connection
@@ -85,6 +140,7 @@ class SqlConnection
 
         virtual SqlPreparedStatement* CreateStatement(const std::string& fmt);
         // allocate prepared statement and return statement ID
+    public:
         SqlPreparedStatement* GetStmt(uint32 nIndex);
 
         Database& m_db;
@@ -125,6 +181,12 @@ class Database
 
         QueryResult* PQuery(const char* format, ...) ATTR_PRINTF(2, 3);
         QueryNamedResult* PQueryNamed(const char* format, ...) ATTR_PRINTF(2, 3);
+
+        bool DirectExecuteAsync(const char* sql)
+        {
+            SqlConnection::Lock guard(getQueryConnection());
+            return guard->Execute(sql);
+        }
 
         bool DirectExecute(const char* sql) const
         {
@@ -241,8 +303,10 @@ class Database
 
         ///< DB connections
 
+        public:
         // round-robin connection selection
         SqlConnection* getQueryConnection();
+        protected:
         // for now return one single connection for async requests
         SqlConnection* getAsyncConnection() const { return m_pAsyncConn; }
 
@@ -264,7 +328,9 @@ class Database
         SqlConnection* m_pAsyncConn;
 
         SqlResultQueue*     m_pResultQueue;                 ///< Transaction queues from diff. threads
+        public:
         SqlDelayThread*     m_threadBody;                   ///< Pointer to delay sql executer (owned by m_delayThread)
+        protected:
         MaNGOS::Thread*     m_delayThread;                  ///< Pointer to executer thread
 
         std::atomic<bool> m_allowAsyncTransactions;         ///< flag which specifies if async transactions are enabled

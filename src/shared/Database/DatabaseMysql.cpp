@@ -179,12 +179,21 @@ bool MySQLConnection::_Query(const char* sql, MYSQL_RES** pResult, MYSQL_FIELD**
 
     uint32 _s = WorldTimer::getMSTime();
 
+    lastStatement = sql;
+
     if (mysql_query(mMysql, sql))
     {
         sLog.outErrorDb("SQL: %s", sql);
         sLog.outErrorDb("query ERROR: %s", mysql_error(mMysql));
         return false;
     }
+
+    if (1 == 1)
+    {   
+        stats[sql].first++;
+        stats[sql].second += WorldTimer::getMSTime() - _s;
+    }
+
     DEBUG_FILTER_LOG(LOG_FILTER_SQL_TEXT, "[%u ms] SQL: %s", WorldTimer::getMSTimeDiff(_s, WorldTimer::getMSTime()), sql);
 
     *pResult = mysql_store_result(mMysql);
@@ -248,12 +257,21 @@ bool MySQLConnection::Execute(const char* sql)
     {
         uint32 _s = WorldTimer::getMSTime();
 
+        lastStatement = sql;
+
         if (mysql_query(mMysql, sql))
         {
             sLog.outErrorDb("SQL: %s", sql);
             sLog.outErrorDb("SQL ERROR: %s", mysql_error(mMysql));
             return false;
+        }      
+
+        if (1 == 1)
+        {
+            stats[sql].first++;
+            stats[sql].second += WorldTimer::getMSTime() - _s;
         }
+
         DEBUG_FILTER_LOG(LOG_FILTER_SQL_TEXT, "[%u ms] SQL: %s", WorldTimer::getMSTimeDiff(_s, WorldTimer::getMSTime()), sql);
         // end guarded block
     }
@@ -263,12 +281,23 @@ bool MySQLConnection::Execute(const char* sql)
 
 bool MySQLConnection::_TransactionCmd(const char* sql)
 {
+    uint32 _s = WorldTimer::getMSTime();
+
+    lastStatement = sql;
+
     if (mysql_query(mMysql, sql))
     {
         sLog.outError("SQL: %s", sql);
         sLog.outError("SQL ERROR: %s", mysql_error(mMysql));
         return false;
     }
+
+    if (1 == 1)
+    {
+        stats[sql].first++;
+        stats[sql].second += WorldTimer::getMSTime() - _s;
+    }
+
     DEBUG_FILTER_LOG(LOG_FILTER_SQL_TEXT, "SQL: %s", sql);
     return true;
 }
@@ -451,11 +480,21 @@ bool MySqlPreparedStatement::execute()
     if (!isPrepared())
         return false;
 
+    uint32 _s = WorldTimer::getMSTime();
+
+    m_pConn.lastStatement = m_szFmt;
+
     if (mysql_stmt_execute(m_stmt))
     {
         sLog.outError("SQL: cannot execute '%s'", m_szFmt.c_str());
         sLog.outError("SQL ERROR: %s", mysql_stmt_error(m_stmt));
         return false;
+    }
+
+    if(1==1)
+    {       
+        m_pConn.stats[m_szFmt].first++;
+        m_pConn.stats[m_szFmt].second += WorldTimer::getMSTime() - _s;
     }
 
     return true;
