@@ -97,6 +97,7 @@ uint8 const ConditionTargetsInternal[] =
     CONDITION_REQ_MAP_OR_WORLDOBJECT, //  39
     CONDITION_REQ_NONE,               //  40
     CONDITION_REQ_NONE,               //  41
+    CONDITION_REQ_NONE                //  42        
 };
 
 // Starts from 4th element so that -3 will return first element.
@@ -496,6 +497,7 @@ bool inline ConditionEntry::Evaluate(WorldObject const* target, Map const* map, 
 // Which params must be provided to a Condition
 bool ConditionEntry::CheckParamRequirements(WorldObject const* target, Map const* map, WorldObject const* source) const
 {
+    MANGOS_ASSERT(m_condition < 43);
     switch (ConditionTargets[m_condition])
     {
         case CONDITION_REQ_NONE:

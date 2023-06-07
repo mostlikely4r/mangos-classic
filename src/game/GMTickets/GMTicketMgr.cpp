@@ -331,7 +331,10 @@ void GMTicketMgr::LoadGMTickets()
 
     // Try to get highest ticket id to start counting from
     if (QueryResult* max = CharacterDatabase.Query("SELECT MAX(id) FROM gm_tickets"))
+    {
         m_lastTicketId = max->Fetch()->GetUInt32();
+        delete max;
+    }
 
     // Load open tickets into memory
     QueryResult* result = CharacterDatabase.Query(
