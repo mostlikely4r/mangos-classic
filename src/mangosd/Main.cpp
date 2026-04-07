@@ -43,7 +43,7 @@
 #include <string>
 
 #ifdef ENABLE_PLAYERBOTS
-#include "PlayerBot/PlayerbotAIConfig.h"
+#include "playerBot/PlayerbotAIConfig.h"
 #endif
 
 #ifdef _WIN32
